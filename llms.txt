@@ -1,0 +1,173 @@
+@zakkster/lite-gradient-studio — LLM-targeted reference
+
+# Identity
+
+Authoring engine for OKLCH gradients. Linear, radial, conic, and N×M
+mesh. Zero-GC rasterization, multi-format export, palette extraction.
+Used in production by Gradient Studio (https://gradient.studio).
+
+# Install
+
+    npm install @zakkster/lite-gradient-studio
+
+Deps install automatically: @zakkster/lite-color,
+@zakkster/lite-color-engine, @zakkster/lite-gradient.
+
+# Import
+
+    import {
+        Gradient,
+        MeshGradient,
+        formatCssLinear, formatCssRadial, formatCssConic, formatCssMesh,
+        toTokens1d, toTokensMesh, EXPORT_FORMATS_1D, EXPORT_FORMATS_MESH, FORMAT_META,
+        toHex, fromHex, oklchToLinearSrgb, linearSrgbToOklch,
+        extractPalette,
+        parseGradientCss,
+        packOklchSingle, bakeGradientToLut, sampleLut, flattenStopsToBuffer,
+        defaultMeshColor,
+    } from '@zakkster/lite-gradient-studio';
+
+# Most common patterns
+
+## Sample a 1D gradient
+
+    const g = new Gradient([
+        { l: 0.4, c: 0.2, h: 270, pos: 0 },
+        { l: 0.8, c: 0.2, h:  60, pos: 1 },
+    ]);
+    const out = { l: 0, c: 0, h: 0, a: 1 };
+    g.at(0.5, out);              // mutates out, no allocation
+
+## Emit CSS
+
+    formatCssLinear(g, { angle: 135, oklchInterp: true });
+    formatCssRadial(g, { shape: 'circle', position: '50% 50%', oklchInterp: true });
+    formatCssConic(g,  { from: 0, position: '50% 50%', oklchInterp: true });
+
+`oklchInterp: true` adds `in oklch` to the gradient — modern browsers
+do the interpolation in OKLCH space. Without the hint they lerp in sRGB.
+
+## Build, deform, and rasterize a mesh
+
+    const m = new MeshGradient(5, 5);
+    m.setPointColor(2, 2, 0.65, 0.26, 320);
+    m.setPointPosition(0, 0, -0.1, -0.1);       // pull a corner outside [0,1]
+    const buf = new Uint32Array(W * H);
+    m.rasterizeDeformedTo(buf, W, H, { mode: 'smooth' });
+    // buf is ARGB-packed sRGB. Wrap as ImageData:
+    const img = new ImageData(new Uint8ClampedArray(buf.buffer), W, H);
+
+`MeshGradient.sampleAt(u, v, out, mode)` is uv-on-REGULAR-grid: deformed
+positions affect rasterization geometry but NOT the color basis. To
+"resample colors at fractional positions of the original grid" you call
+sampleAt and ignore the deformation. That's the right behavior when
+resizing a mesh and preserving its theme.
+
+Modes:
+- 'linear' — bilinear OKLCH. Fastest. Facet-visible at cell borders.
+- 'smooth' — bilinear with smoothstep ease. Default in most editors.
+- 'cubic'  — Catmull-Rom across cells. Smoothest, ~2.5× cost.
+
+## Multi-format export
+
+    const state = { mode: 'linear', angle: 135, stops };
+    toTokens1d('css',      state, { name: 'sunset' });
+    toTokens1d('tailwind', state, { name: 'sunset' });
+    toTokens1d('svg',      state, { name: 'sunset' });
+
+Supported 1D formats: 'css', 'css-var', 'scss', 'tailwind', 'json', 'svg'.
+Supported mesh formats: 'css', 'css-var', 'json'.
+
+## Parse a gradient CSS string
+
+    const parsed = parseGradientCss('linear-gradient(135deg, oklch(0.4 0.2 270) 0%, oklch(0.8 0.2 60) 100%)');
+    // → { mode: 'linear', angle: 135, stops: [{ l, c, h, pos }, ...] }
+
+Round-trips with formatCssLinear/Radial/Conic.
+
+## Extract a palette from an image
+
+    // pixels is a Uint8ClampedArray of length width*height*4
+    const palette = extractPalette(pixels, 5);
+    // -> [{ l, c, h }, ...] -- 5 picks, chroma-weighted, >= 50 deg hue separated
+
+Chroma-weighted means vivid colors win over dominant-by-pixel-count
+colors. A baby-in-blue-shirt photo returns a palette with blue, not
+five shades of skin.
+
+Note: extractPalette reads `pixels.length` directly; it does NOT need
+width and height as separate parameters. Earlier draft docs claimed a
+`(rgba, w, h, count)` signature -- corrected in 1.0.
+
+## Convert OKLCH <-> hex
+
+    toHex({ l: 0.65, c: 0.26, h: 320 });     // -> '#cf5fb9' (sRGB-gamut clipped)
+    fromHex('#cf5fb9');                       // -> { l, c, h, a }
+
+    // Zero-GC matrix conversions: pass an `out` to avoid allocation.
+    const rgbOut = [0, 0, 0];
+    oklchToLinearSrgb(0.5, 0.2, 240, rgbOut);   // writes into rgbOut, returns rgbOut
+    const lchOut = { l: 0, c: 0, h: 0 };
+    linearSrgbToOklch(0.4, 0.3, 0.8, lchOut);   // writes into lchOut, returns lchOut
+
+# Stop shape
+
+1D stops are { l, c, h, pos, a? }:
+- l: OKLCH lightness, 0..1
+- c: OKLCH chroma, 0..~0.4 (in-gamut for sRGB usually <0.30)
+- h: OKLCH hue, degrees 0..360
+- pos: position on the gradient, 0..1
+- a: alpha, 0..1, defaults to 1
+
+Mesh stops are { l, c, h, a?, x?, y? }:
+- Same color fields as 1D
+- x, y: deformed position in [0,1] (or outside). Optional in the
+  constructor — defaults to the regular-grid layout (col / (cols-1),
+  row / (rows-1)).
+
+# Concurrency
+
+Stateless. All operations are pure given inputs. No globals, no module
+state. Concurrent rasterizes to different buffers are safe; concurrent
+mutations of the same MeshGradient are NOT (no locking — caller's job).
+
+# Performance
+
+Benchmarks at npm run bench. Recent numbers (Node v22, Linux x64):
+- Gradient.at: ~9M ops/sec, ~30M when called in a tight sweep
+- MeshGradient.sampleAt (5×5 smooth): ~5M ops/sec
+- rasterizeTo / rasterizeDeformedTo (5×5 → 256×256): ~2M px/sec
+- formatCssLinear: ~360K ops/sec
+- extractPalette (240×240 RGBA, k=5): ~41 calls/sec
+
+Hot-path zero-GC pattern: pre-allocate Uint32Array buffers and scratch
+{ l, c, h, a } objects, reuse across frames. `new ImageData(new
+Uint8ClampedArray(buf.buffer), W, H)` wraps the same backing memory
+the rasterizer writes — no copy on putImageData.
+
+# Anti-patterns
+
+- DO NOT construct a new Gradient per frame in a hot loop. Make it once,
+  store the reference, mutate via setPointColor / setPointPosition if
+  the colors change.
+- DO NOT pass a fresh scratch object to sampleAt per call. Allocate
+  one at module scope or per editor instance.
+- DO NOT trust `gradient.stops` to be sorted post-mutation. The 1D
+  Gradient sorts on construction; if you build a stop array, sort by
+  `pos` ascending before constructing.
+- DO NOT rasterize at retina resolution every frame during a drag.
+  Use a quarter-res offscreen canvas during drag, full-res on release.
+  See Gradient Studio's mesh/render.js for the pattern.
+
+# Why this library exists
+
+The web has settled on OKLCH for color. The CSS Color Level 4 spec
+adds the `in oklch` interpolation hint to gradients. Browsers shipped
+oklch() in 2023. But editor-grade tooling — the layer above raw color
+math, where you author multi-stop gradients with handles, deform a
+mesh, and export to whichever target your downstream needs — is still
+mostly stuck on HSL or sRGB.
+
+This library is that layer. Built once, factored to compose, tuned for
+production rasterization. Pair it with @zakkster/lite-color (the OKLCH
+foundation) and any UI framework to ship a gradient editor.

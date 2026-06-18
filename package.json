@@ -1,0 +1,81 @@
+{
+  "name": "@zakkster/lite-gradient-studio",
+  "version": "1.0.0",
+  "description": "Authoring engine for OKLCH gradients -- linear, radial, conic, and NxM mesh -- with zero-GC rasterization, multi-format export (CSS/SCSS/Tailwind/JSON/SVG), CSS parser, and chroma-weighted palette extraction.",
+  "author": "Zahary Shinikchiev <shinikchiev@yahoo.com>",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "module": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "node": "./src/index.js",
+      "import": "./src/index.js",
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    }
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "llms.txt",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test --test-reporter=spec test/*.test.js",
+    "test:gc": "node --expose-gc --test --test-reporter=spec test/*.test.js",
+    "test:coverage": "c8 node --test --test-reporter=spec test/*.test.js",
+    "bench": "node --expose-gc bench/run.mjs",
+    "verify": "npm run test:gc && npm run bench"
+  },
+  "keywords": [
+    "gradient",
+    "mesh-gradient",
+    "oklch",
+    "color",
+    "canvas",
+    "css",
+    "tailwind",
+    "svg",
+    "palette-extraction",
+    "color-interpolation",
+    "perceptually-uniform",
+    "zero-gc",
+    "zero-allocation",
+    "lite",
+    "no-build",
+    "esm",
+    "rasterizer",
+    "deterministic"
+  ],
+  "homepage": "https://github.com/PeshoVurtoleta/lite-gradient-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PeshoVurtoleta/lite-gradient-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PeshoVurtoleta/lite-gradient-studio/issues",
+    "email": "shinikchiev@yahoo.com"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/PeshoVurtoleta"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@zakkster/lite-color": "^1.0.6",
+    "@zakkster/lite-color-engine": "^1.0.0",
+    "@zakkster/lite-gradient": "^1.0.4"
+  },
+  "devDependencies": {
+    "c8": "^11.0.0"
+  }
+}
