@@ -50,10 +50,10 @@ do the interpolation in OKLCH space. Without the hint they lerp in sRGB.
 ## Build, deform, and rasterize a mesh
 
     const m = new MeshGradient(5, 5);
-    m.setPointColor(2, 2, 0.65, 0.26, 320);
+    m.setPoint(2, 2, 0.65, 0.26, 320);          // mutate L/C/H at (col=2, row=2)
     m.setPointPosition(0, 0, -0.1, -0.1);       // pull a corner outside [0,1]
     const buf = new Uint32Array(W * H);
-    m.rasterizeDeformedTo(buf, W, H, { mode: 'smooth' });
+    m.rasterizeDeformedTo(buf, W, H, { interpolation: 'smooth' });
     // buf is ARGB-packed sRGB. Wrap as ImageData:
     const img = new ImageData(new Uint8ClampedArray(buf.buffer), W, H);
 
@@ -63,17 +63,25 @@ positions affect rasterization geometry but NOT the color basis. To
 sampleAt and ignore the deformation. That's the right behavior when
 resizing a mesh and preserving its theme.
 
-Modes:
-- 'linear' — bilinear OKLCH. Fastest. Facet-visible at cell borders.
-- 'smooth' — bilinear with smoothstep ease. Default in most editors.
-- 'cubic'  — Catmull-Rom across cells. Smoothest, ~2.5× cost.
+Mesh interpolation modes (sampleAt's `mode` arg / rasterize's
+`opts.interpolation`):
+- 'bilinear' — bilinear OKLCH. Fastest. Facet-visible at cell borders. Default.
+- 'smooth'   — bilinear with smoothstep ease. C¹ at seams.
+- 'cubic'    — Catmull-Rom across cells. Smoothest, ~2.5× cost.
+
+Legacy boolean accepted for sampleAt: `false` → bilinear, `true` → smooth.
+Rasterize also accepts `opts.smooth: true` as a legacy alias.
 
 ## Multi-format export
 
     const state = { mode: 'linear', angle: 135, stops };
-    toTokens1d('css',      state, { name: 'sunset' });
-    toTokens1d('tailwind', state, { name: 'sunset' });
-    toTokens1d('svg',      state, { name: 'sunset' });
+    toTokens1d(state, 'css',      { name: 'sunset' });
+    toTokens1d(state, 'tailwind', { name: 'sunset' });
+    toTokens1d(state, 'svg',      { name: 'sunset' });
+
+Signature: toTokens1d(g1dState, formatId, opts) — STATE first, FORMAT
+second. Returns a string. toTokensMesh(mesh, formatId, opts) follows
+the same pattern.
 
 Supported 1D formats: 'css', 'css-var', 'scss', 'tailwind', 'json', 'svg'.
 Supported mesh formats: 'css', 'css-var', 'json'.
@@ -87,28 +95,22 @@ Round-trips with formatCssLinear/Radial/Conic.
 
 ## Extract a palette from an image
 
-    // pixels is a Uint8ClampedArray of length width*height*4
-    const palette = extractPalette(pixels, 5);
-    // -> [{ l, c, h }, ...] -- 5 picks, chroma-weighted, >= 50 deg hue separated
+    // rgba is a Uint8ClampedArray of length width*height*4
+    const palette = extractPalette(rgba, 5);
+    // → [{ l, c, h }, ...] — up to 5 picks, chroma-weighted, ≥50° hue separated
+
+Signature: extractPalette(pixels, count?). Width/height NOT required —
+the algorithm scans linearly. `count` defaults to 5; output may be
+shorter if the image lacks that many distinct hues.
 
 Chroma-weighted means vivid colors win over dominant-by-pixel-count
 colors. A baby-in-blue-shirt photo returns a palette with blue, not
 five shades of skin.
 
-Note: extractPalette reads `pixels.length` directly; it does NOT need
-width and height as separate parameters. Earlier draft docs claimed a
-`(rgba, w, h, count)` signature -- corrected in 1.0.
+## Convert OKLCH ↔ hex
 
-## Convert OKLCH <-> hex
-
-    toHex({ l: 0.65, c: 0.26, h: 320 });     // -> '#cf5fb9' (sRGB-gamut clipped)
-    fromHex('#cf5fb9');                       // -> { l, c, h, a }
-
-    // Zero-GC matrix conversions: pass an `out` to avoid allocation.
-    const rgbOut = [0, 0, 0];
-    oklchToLinearSrgb(0.5, 0.2, 240, rgbOut);   // writes into rgbOut, returns rgbOut
-    const lchOut = { l: 0, c: 0, h: 0 };
-    linearSrgbToOklch(0.4, 0.3, 0.8, lchOut);   // writes into lchOut, returns lchOut
+    toHex({ l: 0.65, c: 0.26, h: 320 });     // → '#cf5fb9' (sRGB-gamut clipped)
+    fromHex('#cf5fb9');                       // → { l, c, h, a }
 
 # Stop shape
 
@@ -148,7 +150,7 @@ the rasterizer writes — no copy on putImageData.
 # Anti-patterns
 
 - DO NOT construct a new Gradient per frame in a hot loop. Make it once,
-  store the reference, mutate via setPointColor / setPointPosition if
+  store the reference, mutate via setPoint / setPointPosition if
   the colors change.
 - DO NOT pass a fresh scratch object to sampleAt per call. Allocate
   one at module scope or per editor instance.

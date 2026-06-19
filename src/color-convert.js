@@ -1,136 +1,88 @@
 /**
- * OKLCH <-> hex.
+ * OKLCH ↔ hex.
  *
  * Pure math; no DOM. Ported from `@zakkster/lite-hueforge` so this
- * library doesn't depend on Hueforge for a single utility -- and so
+ * library doesn't depend on Hueforge for a single utility — and so
  * future consumers can use Gradient Studio's exporters standalone.
  *
  * `toHex` is the hot path (called once per stop per export). The
  * gamut mapper does a 10-iteration binary search on chroma when the
- * requested color is out of sRGB -- precision dC ~= 0.0002, which is
+ * requested color is out of sRGB — precision Δc ≈ 0.0002, which is
  * well below perceptual threshold.
- *
- * Zero-GC discipline:
- * - `oklchToLinearSrgb(L, C, H, out?)`: pass a `[r, g, b]` array to
- *   `out` for zero-allocation; otherwise allocates one fresh array.
- * - `linearSrgbToOklch(r, g, b, out?)`: pass a `{l, c, h}` object to
- *   `out` for zero-allocation; otherwise allocates one fresh object.
- * - The internal binary-search helper uses a module-level scratch and
- *   takes (L, cosH, sinH) by parameter rather than closing over them,
- *   so no per-call closure is allocated either way.
  */
-
-/* Module-level scratch for the gamut-mapping binary search. Single-
- * threaded JS: safe to reuse across calls. Not exposed. */
-const _gamutTry = [0, 0, 0];
 
 /**
- * Evaluate (L, C, H) -> linear-sRGB into `dst[0..2]`.
- * Pure helper: takes everything by parameter, no closures. Inlines fine.
+ * OKLCH → linear sRGB triplet, with sRGB-gamut mapping by chroma reduction.
+ * Output: [r, g, b] each in [0, 1].
  */
-function evalOklchRgb(L, cosH, sinH, cVal, dst) {
-    const a = cVal * cosH;
-    const b = cVal * sinH;
-    const lP = L + 0.3963377774 * a + 0.2158037573 * b;
-    const mP = L - 0.1055613458 * a - 0.0638541728 * b;
-    const sP = L - 0.0894841775 * a - 1.2914855480 * b;
-    const lL = lP * lP * lP;
-    const mL = mP * mP * mP;
-    const sL = sP * sP * sP;
-    dst[0] = +4.0767416621 * lL - 3.3077115913 * mL + 0.2309699292 * sL;
-    dst[1] = -1.2684380046 * lL + 2.6097574011 * mL - 0.3413193965 * sL;
-    dst[2] = -0.0041960863 * lL - 0.7034186147 * mL + 1.7076147010 * sL;
-}
-
-/**
- * OKLCH -> linear sRGB triplet, with sRGB-gamut mapping by chroma reduction.
- * Output range: each channel in [0, 1].
- *
- * @param {number} L
- * @param {number} C
- * @param {number} H
- * @param {number[]} [out]   3-element array. If provided, written in place
- *                           and returned (zero allocation). Otherwise a
- *                           fresh `[r, g, b]` array is allocated.
- * @returns {number[]}       Same `out` if provided, else a new array.
- */
-export function oklchToLinearSrgb(L, C, H, out) {
-    if (!out) out = [0, 0, 0];
-
+export function oklchToLinearSrgb(L, C, H) {
     const hRad = H * Math.PI / 180;
     const cosH = Math.cos(hRad);
     const sinH = Math.sin(hRad);
 
-    // Try the requested chroma. If it's in-gamut, we're done.
-    evalOklchRgb(L, cosH, sinH, C, out);
-    if (
-        out[0] >= 0 && out[0] <= 1 &&
-        out[1] >= 0 && out[1] <= 1 &&
-        out[2] >= 0 && out[2] <= 1
-    ) {
-        return out;
+    function getRgb(cVal) {
+        const a = cVal * cosH;
+        const b = cVal * sinH;
+        const lP = L + 0.3963377774 * a + 0.2158037573 * b;
+        const mP = L - 0.1055613458 * a - 0.0638541728 * b;
+        const sP = L - 0.0894841775 * a - 1.2914855480 * b;
+        const lL = lP * lP * lP;
+        const mL = mP * mP * mP;
+        const sL = sP * sP * sP;
+        const r  = +4.0767416621 * lL - 3.3077115913 * mL + 0.2309699292 * sL;
+        const g  = -1.2684380046 * lL + 2.6097574011 * mL - 0.3413193965 * sL;
+        const bb = -0.0041960863 * lL - 0.7034186147 * mL + 1.7076147010 * sL;
+        return [r, g, bb];
     }
 
-    // Out of gamut. Try C=0 (a neutral at the same L). If that's STILL
-    // out of gamut, L is extreme (caller passed L > 1 or L < 0); clamp
-    // channelwise and return.
-    evalOklchRgb(L, cosH, sinH, 0, _gamutTry);
-    if (
-        _gamutTry[0] < 0 || _gamutTry[0] > 1 ||
-        _gamutTry[1] < 0 || _gamutTry[1] > 1 ||
-        _gamutTry[2] < 0 || _gamutTry[2] > 1
-    ) {
-        if (out[0] < 0) out[0] = 0; else if (out[0] > 1) out[0] = 1;
-        if (out[1] < 0) out[1] = 0; else if (out[1] > 1) out[1] = 1;
-        if (out[2] < 0) out[2] = 0; else if (out[2] > 1) out[2] = 1;
-        return out;
+    let [r, g, bb] = getRgb(C);
+
+    if (r >= 0 && r <= 1 && g >= 0 && g <= 1 && bb >= 0 && bb <= 1) {
+        return [r, g, bb];
     }
 
-    // Binary search for the largest in-gamut chroma in [0, C]. The fit
-    // is held in `out`; the candidate at the current `midC` is in
-    // `_gamutTry`. Precision dC ~= C / 2^10 ~= 0.0002 -- well below
-    // perceptual threshold.
+    // Gamut map via binary search on chroma. The C=0 point at this L is
+    // always in gamut if L ∈ [0,1]; defensive fallback covers caller
+    // passing out-of-range L.
+    const [gr, gg, gb] = getRgb(0);
+    if (gr < 0 || gr > 1 || gg < 0 || gg > 1 || gb < 0 || gb > 1) {
+        if (r  < 0) r  = 0; else if (r  > 1) r  = 1;
+        if (g  < 0) g  = 0; else if (g  > 1) g  = 1;
+        if (bb < 0) bb = 0; else if (bb > 1) bb = 1;
+        return [r, g, bb];
+    }
+
     let lo = 0, hi = C;
-    out[0] = _gamutTry[0]; out[1] = _gamutTry[1]; out[2] = _gamutTry[2];
+    let fitR = gr, fitG = gg, fitB = gb;
     for (let i = 0; i < 10; i++) {
         const midC = (lo + hi) / 2;
-        evalOklchRgb(L, cosH, sinH, midC, _gamutTry);
-        if (
-            _gamutTry[0] >= 0 && _gamutTry[0] <= 1 &&
-            _gamutTry[1] >= 0 && _gamutTry[1] <= 1 &&
-            _gamutTry[2] >= 0 && _gamutTry[2] <= 1
-        ) {
+        const [mr, mg, mbb] = getRgb(midC);
+        if (mr >= 0 && mr <= 1 && mg >= 0 && mg <= 1 && mbb >= 0 && mbb <= 1) {
             lo = midC;
-            out[0] = _gamutTry[0];
-            out[1] = _gamutTry[1];
-            out[2] = _gamutTry[2];
+            fitR = mr; fitG = mg; fitB = mbb;
         } else {
             hi = midC;
         }
     }
-    return out;
+    return [fitR, fitG, fitB];
 }
 
-/** sRGB transfer (linear -> gamma-encoded). IEC 61966-2-1. */
+/** sRGB transfer (linear → gamma-encoded). IEC 61966-2-1. */
 export function srgbGamma(x) {
     return x <= 0.0031308
         ? x * 12.92
         : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
 }
 
-/** sRGB inverse transfer (gamma-encoded -> linear). */
+/** sRGB inverse transfer (gamma-encoded → linear). */
 export function srgbInverseGamma(x) {
     return x <= 0.04045
         ? x / 12.92
         : Math.pow((x + 0.055) / 1.055, 2.4);
 }
 
-/* Scratch for `toHex`. Single allocation at module load; safe to reuse
- * because toHex completes synchronously and JS is single-threaded. */
-const _toHexRgb = [0, 0, 0];
-
 /**
- * OKLCH -> hex. Emits '#rrggbb' for opaque colors (a >= 1 or undefined)
+ * OKLCH → hex. Emits '#rrggbb' for opaque colors (a >= 1 or undefined)
  * and '#rrggbbaa' when alpha is below 1. Output always lowercase.
  *
  * Bit-pack trick: `(1<<24) | (R<<16) | (G<<8) | B` produces a number
@@ -139,10 +91,10 @@ const _toHexRgb = [0, 0, 0];
  * intermediate garbage.
  */
 export function toHex({ l, c, h, a }) {
-    oklchToLinearSrgb(l, c, h, _toHexRgb);
-    const R = (srgbGamma(_toHexRgb[0]) * 255 + 0.5) | 0;
-    const G = (srgbGamma(_toHexRgb[1]) * 255 + 0.5) | 0;
-    const B = (srgbGamma(_toHexRgb[2]) * 255 + 0.5) | 0;
+    const linRgb = oklchToLinearSrgb(l, c, h);
+    const R = (srgbGamma(linRgb[0]) * 255 + 0.5) | 0;
+    const G = (srgbGamma(linRgb[1]) * 255 + 0.5) | 0;
+    const B = (srgbGamma(linRgb[2]) * 255 + 0.5) | 0;
     const rgb = '#' + ((1 << 24) | (R << 16) | (G << 8) | B).toString(16).slice(1);
     // Opacity: skip the alpha byte when fully opaque, so the common case
     // produces clean 6-char hex matching design-tool conventions.
@@ -157,19 +109,9 @@ function clampByte(v) {
 }
 
 /**
- * Linear sRGB -> OKLCH. Used by fromHex and the palette extractor.
- *
- * @param {number} r       Linear red, [0, 1].
- * @param {number} g
- * @param {number} b
- * @param {{l:number,c:number,h:number,a?:number}} [out]
- *        If provided, written in place and returned (zero allocation).
- *        The `a` field is left untouched -- callers that need alpha
- *        plumbing set it themselves.
- * @returns {{l:number,c:number,h:number}}  Same `out` if provided.
+ * Linear sRGB → OKLCH. Used by fromHex and the palette extractor.
  */
-export function linearSrgbToOklch(r, g, b, out) {
-    if (!out) out = { l: 0, c: 0, h: 0 };
+export function linearSrgbToOklch(r, g, b) {
     const lLms = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
     const mLms = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
     const sLms = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
@@ -177,17 +119,16 @@ export function linearSrgbToOklch(r, g, b, out) {
     const mP = Math.cbrt(mLms);
     const sP = Math.cbrt(sLms);
     const L = 0.2104542553 * lP + 0.7936177850 * mP - 0.0040720468 * sP;
-    const aa = 1.9779984951 * lP - 2.4285922050 * mP + 0.4505937099 * sP;
+    const a = 1.9779984951 * lP - 2.4285922050 * mP + 0.4505937099 * sP;
     const bb = 0.0259040371 * lP + 0.7827717662 * mP - 0.8086757660 * sP;
-    const C = Math.sqrt(aa * aa + bb * bb);
-    let H = Math.atan2(bb, aa) * 180 / Math.PI;
+    const C = Math.sqrt(a * a + bb * bb);
+    let H = Math.atan2(bb, a) * 180 / Math.PI;
     if (H < 0) H += 360;
-    out.l = L; out.c = C; out.h = H;
-    return out;
+    return { l: L, c: C, h: H };
 }
 
 /**
- * Hex string -> { l, c, h, a }. Accepts:
+ * Hex string → { l, c, h, a }. Accepts:
  *   - 3-char  '#rgb'      (alpha defaults to 1)
  *   - 4-char  '#rgba'     (each nibble doubled)
  *   - 6-char  '#rrggbb'   (alpha defaults to 1)

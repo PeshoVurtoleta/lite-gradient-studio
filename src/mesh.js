@@ -281,29 +281,36 @@ export class MeshGradient {
     }
 
     /**
-     * Sample the gradient at parametric (u, v) in [0, 1]^2 into `out`.
-     * Zero-GC: writes into the caller-owned `out` object to avoid the
-     * per-pixel allocation a return-by-value version would force.
-     * Bilinear in OKLCH, hue-shortest-path via `lerpOklchTo`.
+     * Sample the mesh at normalized (u, v) ∈ [0, 1]² into `out`.
+     * Zero-GC. Bilinear in OKLCH, hue-shortest-path via lerpOklchTo.
      *
-     * Hue normalization matters: `lerpOklchTo` picks the shortest hue
-     * path but does NOT bound its output to [0, 360). At extreme corners
-     * or after wrap-crossing lerps, the intermediate hue can land at 390
-     * or -30. Left unnormalized, that propagates into the second lerp
-     * and adds another 360 to the final hue. We normalize after each
-     * stage.
+     * Hue normalization: lerpOklchTo takes the shortest-path delta but
+     * does NOT bound its output to [0, 360). At extreme corners or after
+     * wrap-crossing lerps, the intermediate hue can land at 390 or -30.
+     * Left unnormalized, that propagates into the second lerp and adds
+     * another 360 to the final hue. We normalize after each stage.
+     *
+    /**
+     * Sample the gradient at parametric (u, v) ∈ [0, 1]². Writes into `out`
+     * to avoid the per-pixel allocation a return-by-value version would force.
+     *
+     * Hue normalization matters: `lerpOklchTo` picks the shortest hue path but
+     * does NOT bound its output to [0, 360). At extreme corners or after
+     * wrap-crossing lerps, the intermediate hue can land at 390 or -30.
+     * Left unnormalized, that propagates into the second lerp and adds
+     * another 360 to the final hue. We normalize after each stage.
      *
      * The optional fourth parameter selects interpolation. Accepts:
-     *   - false / undefined -> 'bilinear'   (original, C^0)
-     *   - true              -> 'smooth'     (smoothstep on cu/cv, C^1 at seams)
-     *   - 'cubic'           -> Catmull-Rom 2D (C^1 everywhere; ~4x cost)
+     *   - false / undefined → 'bilinear'   (original, C⁰)
+     *   - true              → 'smooth'     (smoothstep on cu/cv, C¹ at seams)
+     *   - 'cubic'           → Catmull-Rom 2D (C¹ everywhere; 4× cost)
      *   - any of the strings above explicitly
      *
      * @param {number} u
      * @param {number} v
-     * @param {{l:number,c:number,h:number,a?:number}} out
+     * @param {{l:number,c:number,h:number}} out
      * @param {boolean|string} [modeOrSmooth=false]
-     * @returns {{l:number,c:number,h:number,a:number}} same `out`
+     * @returns {{l:number,c:number,h:number}} same `out`
      */
     sampleAt(u, v, out, modeOrSmooth = false) {
         // Normalize the legacy boolean to the string form. Hot path —

@@ -82,6 +82,27 @@ export function toTokensMesh(mesh, format, opts = {}) {
 
 /* ── 1D exporters ────────────────────────────────────────────────── */
 
+/**
+ * Read the position field from a stop, accepting both conventions.
+ *
+ * The 1D state shape carries position as `stop` (matches the editor's
+ * field name and the exporter signature documented in `toTokens1d`).
+ * The `Gradient` class (re-exported from `@zakkster/lite-gradient`)
+ * carries it as `pos`. README quick-start examples that pipe
+ * `gradient.stops` directly into `toTokens1d` would otherwise produce
+ * `NaN%` positions; this fallback makes either shape work without a
+ * caller-side map step.
+ *
+ * Precedence: `stop` first (it's the documented field), `pos` as
+ * fallback. Returns 0 if neither is set — defensive, mirrors how the
+ * rest of the exporter treats malformed input.
+ */
+function readStopPos(s) {
+    if (s.stop !== undefined) return s.stop;
+    if (s.pos  !== undefined) return s.pos;
+    return 0;
+}
+
 /** Return the raw CSS gradient string for this 1D state. */
 function cssBodyFor1d(g) {
     // Build a Gradient-shaped stops array (renames `stop` → `pos`).
@@ -90,7 +111,7 @@ function cssBodyFor1d(g) {
     const stopsForCss = g.stops.map((s) => ({
         l: s.l, c: s.c, h: s.h,
         a: s.a === undefined ? 1 : s.a,
-        pos: s.stop,
+        pos: readStopPos(s),
     }));
     const fake = { stops: stopsForCss };  // formatCss* only reads .stops
     if (g.mode === 'linear') {
@@ -162,7 +183,7 @@ export function toJson1d(g, opts = {}) {
         interpolation: 'oklch',
         stops: g.stops.map((s) => {
             const stop = {
-                position: round3(s.stop),
+                position: round3(readStopPos(s)),
                 color: { l: round3(s.l), c: round3(s.c), h: round1(s.h) },
                 hex: toHex(s),
             };

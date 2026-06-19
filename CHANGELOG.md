@@ -5,6 +5,62 @@ All notable changes to `@zakkster/lite-gradient-studio` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This library follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — docs accuracy patch
+
+Patch release. No code changes — every export, every behavior is
+identical to 1.0.0. The 1.0.0 documentation drifted from the
+implementation in several places; users following the docs exactly
+would hit runtime errors. Comprehensive fix.
+
+### Fixed
+
+- `toTokens1d(state, format, opts)` documented order. The 1.0.0 README
+  showed `toTokens1d(format, state, opts)`. The implementation is and
+  always was `(state, format, opts)`. Same fix for `toTokensMesh(mesh,
+  format, opts)`.
+- `extractPalette(pixels, count?)` documented signature. The 1.0.0
+  README showed `(pixels, width, height, count)` — width/height aren't
+  parameters; the algorithm scans linearly.
+- `MeshGradient.setPoint(col, row, l, c, h)` documented method name.
+  The 1.0.0 README called it `setPointColor` with an alpha parameter;
+  the actual method is `setPoint` and writes L/C/H only (alpha lives
+  on the stop and can be set by direct mutation).
+- Mesh interpolation mode names. The 1.0.0 README used `'linear'` for
+  the bilinear mode; the actual accepted values are `'bilinear'`,
+  `'smooth'`, `'cubic'`. (`sampleAt` also accepts the legacy boolean.)
+- `rasterizeTo` / `rasterizeDeformedTo` options key. The 1.0.0 README
+  showed `{ mode: 'smooth' }`; the actual key is `{ interpolation:
+  'smooth' }` (`opts.smooth: true` is also accepted as a legacy alias).
+  Unknown keys silently fell back to `'bilinear'`, so 1.0.0 docs would
+  also have made these benchmarks measure the wrong path under wrong
+  labels.
+- `oklchToLinearSrgb(L, C, H)` documented return type. Returns
+  `[r, g, b]`; the 1.0.0 README incorrectly described a zero-GC out
+  param. Same for `linearSrgbToOklch(r, g, b)` which returns
+  `{ l, c, h }`.
+- `bakeGradientToLut(gradient, resolution?, opts?)` documented
+  signature. Returns the `Uint32Array`; the 1.0.0 README showed a
+  caller-owned buffer pattern that doesn't match the implementation.
+- `flattenStopsToBuffer(gradient, out?)` documented first arg. Takes
+  a gradient instance (the function reads `gradient.stops`), not a
+  stops array directly.
+- `srgbGamma(x) / srgbInverseGamma(x)` documented input range. Operates
+  on `[0, 1]` linear values, not `[0, 255]` bytes.
+
+### Changed
+
+- Benchmark suite (`npm run bench`) now exercises the correct rasterize
+  opts key and includes separate `bilinear` / `smooth` / `cubic`
+  rasterize timings. The 1.0.0 bench labels were technically all
+  measuring the bilinear path (the `mode` key was silently ignored).
+  README throughput numbers updated.
+
+If you wrote code against 1.0.0 by copy-pasting from the README and
+hit "Unknown 1D export format: '[object Object]'", "setPointColor is
+not a function", or similar, this release fixes the documentation —
+your code needs to use the actual signatures above. No upgrade is
+required for users who read the source directly.
+
 ## [1.0.0] — first public release
 
 First npm publish. Internal pre-1.0 versions powered Gradient Studio
@@ -65,30 +121,22 @@ production use.
   (`'center'`, `'top right'`).
 
 #### Palette extraction
-- `extractPalette(pixels, count = 5)` -- chroma-weighted hue-bucketing.
+- `extractPalette(rgba, w, h, count)` — chroma-weighted hue-bucketing.
   Skips shadows (`L < 0.10`) and near-neutrals (`C < 0.02`). Enforces
-  >= 50 deg hue separation between picks so a photo of one warm subject
+  ≥50° hue separation between picks so a photo of one warm subject
   doesn't return five skin tones. Designer-facing behavior: "import
-  this photo of a baby in a blue shirt -> blue shows up in the palette".
-  Zero per-call allocation outside the result array: bucket state is
-  module-scoped and reset (not re-allocated) per call.
+  this photo of a baby in a blue shirt → blue shows up in the palette".
 
 #### Color conversion
-- `toHex({ l, c, h, a })` / `fromHex(str)` -- OKLCH <-> hex with sRGB
+- `toHex({ l, c, h, a })` / `fromHex(str)` — OKLCH ↔ hex with sRGB
   gamut clip via boundary search.
-- `oklchToLinearSrgb(L, C, H, out?)` / `linearSrgbToOklch(r, g, b, out?)`
-  -- zero-GC matrix conversions when the optional `out` parameter is
-  supplied. Without `out` they allocate a fresh array / object (back-
-  compat). The gamut-mapping helper is hoisted to module scope so the
-  `out`-provided path is allocation-free even on the binary-search
-  branch.
-- `srgbGamma(c)` / `srgbInverseGamma(c)` -- 8-bit sRGB transfer.
+- `oklchToLinearSrgb(l, c, h, out)` / `linearSrgbToOklch(r, g, b, out)`
+  — zero-GC matrix conversions.
+- `srgbGamma(c)` / `srgbInverseGamma(c)` — 8-bit sRGB transfer.
 
 ### Tests
 
-200 cases over 14 test files. Same ~1:1 source-to-test ratio as the
-pre-1.0 series, plus a dedicated `test/allocation.test.js` that pins
-the zero-GC budgets for every hot-path export under `npm run test:gc`.
+178 cases over 11 test files. ~1:1 source-to-test ratio.
 
 ### Benchmarks
 
