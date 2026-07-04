@@ -144,6 +144,45 @@ export class MeshGradient {
 }
 
 // ---------------------------------------------------------------------------
+//  Monochrome mesh (v1.1.0)
+// ---------------------------------------------------------------------------
+
+export type MonoMode = 'tinted' | 'grayscale';
+export type MonoMeshDirection = 'horizontal' | 'vertical' | 'diagonal' | 'radial';
+
+export interface MonochromeMeshOptions {
+    /**
+     * Chroma handling.
+     * - `'tinted'` (default): retain base color's chroma/hue at every point.
+     * - `'grayscale'`: force chroma to 0 for pure achromatic tones.
+     */
+    mode?: MonoMode;
+    /** L-axis endpoints [lo, hi], must satisfy `0 <= lo < hi <= 1`. Default `[0, 1]`. */
+    range?: readonly [number, number];
+    /**
+     * How L varies across the mesh:
+     * - `'horizontal'`: left-to-right, uniform per row.
+     * - `'vertical'`: top-to-bottom, uniform per column.
+     * - `'diagonal'` (default): top-left corner (lo) to bottom-right corner (hi).
+     * - `'radial'`: center (lo) outward to corners (hi).
+     */
+    direction?: MonoMeshDirection;
+}
+
+/**
+ * Build a monochromatic MeshGradient from a single base OKLCH color.
+ * Chroma and hue are held constant across every control point; only
+ * lightness varies according to `direction`. Client-work-friendly:
+ * never looks "AI-generated" because the palette is fixed to one brand tone.
+ */
+export function monochromeMesh(
+    base: OklchColor,
+    cols: number,
+    rows: number,
+    opts?: MonochromeMeshOptions
+): MeshGradient;
+
+// ---------------------------------------------------------------------------
 //  CSS emitters
 // ---------------------------------------------------------------------------
 

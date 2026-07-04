@@ -1,8 +1,14 @@
 # @zakkster/lite-gradient-studio
 
+> Authoring engine for OKLCH gradients -- linear, radial, conic, and N×M mesh -- with zero-GC rasterization, multi-format export, and chroma-weighted palette extraction.
+
 [![npm version](https://img.shields.io/npm/v/@zakkster/lite-gradient-studio.svg?style=for-the-badge&color=latest)](https://www.npmjs.com/package/@zakkster/lite-gradient-studio)
+[![sponsor](https://img.shields.io/badge/sponsor-PeshoVurtoleta-ea4aaa.svg?logo=github)](https://github.com/sponsors/PeshoVurtoleta)
+![Zero-GC](https://img.shields.io/badge/Zero--GC-Engine-00C853?style=for-the-badge&logo=leaf&logoColor=white)
 [![npm bundle size](https://img.shields.io/bundlephobia/minzip/@zakkster/lite-gradient-studio?style=for-the-badge)](https://bundlephobia.com/result?p=@zakkster/lite-gradient-studio)
 [![npm downloads](https://img.shields.io/npm/dm/@zakkster/lite-gradient-studio?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-gradient-studio)
+[![npm total downloads](https://img.shields.io/npm/dt/@zakkster/lite-gradient-studio?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-gradient-studio)
+![TypeScript](https://img.shields.io/badge/TypeScript-Types-informational)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 Authoring engine for OKLCH gradients — linear, radial, conic, and N×M mesh — with zero-GC rasterization, multi-format export, and chroma-weighted palette extraction.
@@ -182,6 +188,47 @@ Each box is one module under `src/` with one test file under `test/`. Modules co
 - `'bilinear'` — bilinear OKLCH. Fastest. Smooth between adjacent stops, faceted at cell borders. Default.
 - `'smooth'` — bilinear with smoothstep-eased u/v. Softens cell-border artifacts.
 - `'cubic'` — Catmull-Rom across cell boundaries. Smoothest; ~2.5× the cost of `'bilinear'`.
+
+### Monochrome mesh (v1.1.0)
+
+Mesh-level analogue of `lite-gradient`'s `monochromeGradient` — chroma and hue held
+constant across every control point; only lightness varies. Client-work-friendly:
+subtle premium backgrounds without the "AI-generated random gradient" look.
+
+```js
+import { monochromeMesh } from '@zakkster/lite-gradient-studio';
+
+// 3×3 mesh, all points share the brand hue, L varies diagonally
+const mesh = monochromeMesh({ l: 0.5, c: 0.06, h: 245 }, 3, 3);
+
+// Rasterize to a canvas
+const buf = new Uint32Array(800 * 600);
+mesh.rasterizeTo(buf, 800, 600);
+const img = new ImageData(new Uint8ClampedArray(buf.buffer), 800, 600);
+ctx.putImageData(img, 0, 0);
+
+// Or emit CSS (canvas-free rendering)
+const css = formatCssMesh(mesh);
+element.style.background = css;
+```
+
+**`monochromeMesh(base, cols, rows, opts?)`** → `MeshGradient`
+
+| Option      | Type                                                          | Default        | Notes                                                                       |
+|-------------|---------------------------------------------------------------|----------------|-----------------------------------------------------------------------------|
+| `mode`      | `'tinted' \| 'grayscale'`                                     | `'tinted'`     | `'tinted'` retains base c/h; `'grayscale'` forces c=0.                      |
+| `range`     | `[number, number]`                                            | `[0, 1]`       | L-axis endpoints. Must satisfy `0 ≤ lo < hi ≤ 1`.                           |
+| `direction` | `'horizontal' \| 'vertical' \| 'diagonal' \| 'radial'`        | `'diagonal'`   | How L varies across the mesh. See below.                                    |
+
+**Directions:**
+- **`'horizontal'`** — L varies left-to-right, uniform across each row. Like a linear gradient, but you can deform post-hoc.
+- **`'vertical'`** — L varies top-to-bottom, uniform across each column.
+- **`'diagonal'`** (default) — top-left corner (lo) to bottom-right corner (hi). Most versatile; uses both axes meaningfully.
+- **`'radial'`** — center (lo) outward to corners (hi). Atmospheric "premium" feel.
+
+Post-construction, you can `setPointPosition(...)` to warp the L distribution off-grid
+— something you can't do with a flat 1D gradient. This is what mesh capability buys you
+in the client-work scenario: brand-safe base + designer-controlled organic character.
 
 ### CSS emitters
 

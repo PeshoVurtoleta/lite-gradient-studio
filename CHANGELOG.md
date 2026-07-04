@@ -5,6 +5,109 @@ All notable changes to `@zakkster/lite-gradient-studio` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This library follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-07-03
+
+### Added — Monochrome mesh
+
+Mesh-level analogue of the `monochromeGradient` factory that shipped in
+`@zakkster/lite-gradient` v1.1.0. Both together form a coordinated
+monochrome capability across the ecosystem — 1D continuous gradients in
+lite-gradient, 2D deformable meshes in lite-gradient-studio.
+
+- **`monochromeMesh(base, cols, rows, opts?)`** — factory returning a
+  `MeshGradient` where every control point shares `base.c` and `base.h`
+  (or `c=0` if `mode: 'grayscale'`); only L varies according to
+  `direction`. Post-construction, the returned mesh behaves like any
+  other `MeshGradient` — `setPointPosition(...)` to warp the L
+  distribution off-grid, `rasterizeTo(...)` / `rasterizeDeformedTo(...)`
+  to render.
+
+- **Options:**
+  - `mode`: `'tinted'` (default) | `'grayscale'`
+  - `range`: `[lo, hi]` with `0 <= lo < hi <= 1`, default `[0, 1]`
+  - `direction`: `'horizontal'` | `'vertical'` | `'diagonal'` (default) | `'radial'`
+
+- **Directions:**
+  - `'horizontal'` — L varies left-to-right, uniform per row (equivalent
+    to a linear gradient, but with mesh deformability post-hoc).
+  - `'vertical'` — L varies top-to-bottom, uniform per column.
+  - `'diagonal'` (default) — top-left corner (lo) to bottom-right
+    corner (hi). Uses both axes meaningfully — the most versatile default.
+  - `'radial'` — center (lo) outward to corners (hi). Atmospheric,
+    "premium background" feel.
+
+- **Type declarations:** `MonoMode`, `MonoMeshDirection`,
+  `MonochromeMeshOptions`, plus the factory signature in
+  `src/index.d.ts`.
+
+- **Re-exports flow through:** `monochromeGradient`, `gradientMonoWarm`,
+  `gradientMonoCool` from `@zakkster/lite-gradient` v1.1.0 are already
+  visible via the existing `export * from '@zakkster/lite-gradient'`
+  in `src/index.js`. No new studio-level 1D monochrome factory needed;
+  users import from either package interchangeably.
+
+### Why this matters
+
+Designer feedback on the mesh-gradient positioning (the original
+mesh-gradient authoring focus) surfaced two problems: (1) AI image
+generators can produce arbitrary decorative gradients on demand, eating
+the "generate a wild gradient" use case at the low end; (2) designers
+doing client work don't have creative freedom to ship wild mesh
+gradients — they're constrained to brand palettes.
+
+Monochrome mesh dodges both problems. The palette is fixed to a single
+brand tone (nothing "wild" or "random-looking"); the mesh capability
+still gives designers organic-feeling backgrounds that flat 1D
+gradients can't — subtle asymmetry via `setPointPosition`, off-center
+radial gradients, non-linear L distributions. Same authoring surface,
+narrower creative space that lands in the client-work zone.
+
+### Peer dependency bump
+
+- `@zakkster/lite-gradient`: `^1.0.4` → `^1.1.0`
+
+Existing consumers using only pre-1.1.0 exports continue to work
+identically. The bump ensures `monochromeGradient` and the two Mono
+presets are guaranteed available via the re-export.
+
+### Tests
+
+18 new tests across `test/mesh-monochrome.test.js`. Coverage: the four
+directions (verified by inspecting the initialized `stops` array — e.g.
+horizontal makes row 0 == row 1 == row 2; radial makes center = lo and
+all four corners = hi), both modes, custom range, sampling correctness,
+every validation throw path, and base non-mutation.
+
+The 4 previously-failing `color-convert.test.js` tests (documented in
+1.0.1 as a docs-vs-implementation mismatch) now pass — see "Fixed"
+below. Total: 218 tests, **203 pass**, 0 fail, 15 skipped.
+
+### Fixed
+
+- **`oklchToLinearSrgb(L, C, H, out?)` and `linearSrgbToOklch(r, g, b, out?)`
+  now honor the optional `out` parameter** documented since 1.0.0 in
+  `index.d.ts` and covered by tests that had been failing since publish.
+  Pass a caller-owned 3-element array (or `{ l, c, h }` object) as the
+  final argument; the function writes into it in place and returns the
+  same reference — zero allocation on the hot path. Omitting `out` (or
+  passing `null` / `undefined`) preserves the existing 3-arg call shape
+  and returns a freshly-allocated result.
+
+  Real impact: `oklchToLinearSrgb` is called per-pixel in `rasterizeTo` /
+  `rasterizeDeformedTo` and per-color in every exporter. Callers threading
+  a scratch array through that hot loop can now avoid allocating one
+  triplet per pixel. Existing 3-arg calls are unchanged.
+
+  The 1.0.1 CHANGELOG framed this as "docs drifted from implementation"
+  and rolled back the docs. That was a stopgap. The correct resolution
+  was implementing the feature the docs, types, and tests all documented;
+  this ship does that. Non-breaking either way (the 3-arg signature is
+  a strict subset of the new 4-arg signature).
+
+### Non-breaking
+
+Additive only. No existing API surface changed.
+
 ## [1.0.1] — docs accuracy patch
 
 Patch release. No code changes — every export, every behavior is

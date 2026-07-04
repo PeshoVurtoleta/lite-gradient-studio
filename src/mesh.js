@@ -678,3 +678,136 @@ export class MeshGradient {
         this._scratchBot = null;
     }
 }
+
+// ---- Monochrome mesh (v1.1.0) --------------------------------------------
+
+/**
+ * Build a monochromatic MeshGradient from a single base OKLCH color.
+ *
+ * Chroma and hue are held constant across every control point in the mesh;
+ * only lightness varies according to `direction`. This is the mesh-level
+ * analogue to lite-gradient's `monochromeGradient(base, opts)` — a
+ * client-work-friendly mesh that never looks like an "AI-generated random
+ * gradient" because the palette is fixed to a single brand tone.
+ *
+ * Typical use: subtle premium backgrounds for cards, hero sections,
+ * editorial layouts. The mesh structure means users can post-hoc
+ * `setPointPosition(...)` control points off-grid to warp the L
+ * distribution — impossible with a flat 1D gradient.
+ *
+ * @param {{ l: number, c: number, h: number }} base
+ *   OKLCH base color. `c` and `h` are held constant across the mesh
+ *   (or c=0 if `mode: 'grayscale'`).
+ * @param {number} cols  Number of columns (integer >= 2).
+ * @param {number} rows  Number of rows (integer >= 2).
+ * @param {Object} [opts]
+ * @param {'tinted' | 'grayscale'} [opts.mode='tinted']
+ * @param {[number, number]} [opts.range=[0, 1]]
+ *   L-axis endpoints. Must satisfy `0 <= lo < hi <= 1`.
+ * @param {'horizontal' | 'vertical' | 'diagonal' | 'radial'} [opts.direction='diagonal']
+ *   How L varies across the mesh:
+ *   - `'horizontal'`: L varies left-to-right, uniform across each row.
+ *   - `'vertical'`: L varies top-to-bottom, uniform across each column.
+ *   - `'diagonal'`: L varies from top-left (lo) to bottom-right (hi).
+ *   - `'radial'`: L is `lo` at center, `hi` at corners.
+ * @returns {MeshGradient}
+ *
+ * @throws {TypeError}  On invalid `base`, `mode`, `direction`, or `range` shape.
+ * @throws {RangeError} On invalid `range` values or `cols`/`rows` < 2.
+ *
+ * @example
+ * // Subtle premium background for a brand card
+ * const mesh = monochromeMesh({ l: 0.5, c: 0.06, h: 245 }, 3, 3);
+ * const buf = new Uint32Array(800 * 600);
+ * mesh.rasterizeTo(buf, 800, 600);
+ * const img = new ImageData(new Uint8ClampedArray(buf.buffer), 800, 600);
+ * ctx.putImageData(img, 0, 0);
+ */
+export function monochromeMesh(base, cols, rows, opts) {
+    if (base == null || typeof base !== 'object' ||
+        typeof base.l !== 'number' || typeof base.c !== 'number' ||
+        typeof base.h !== 'number') {
+        throw new TypeError(
+            'monochromeMesh: base must be { l, c, h } with numeric fields'
+        );
+    }
+    if (!Number.isInteger(cols) || cols < 2) {
+        throw new RangeError(
+            'monochromeMesh: cols must be an integer >= 2, got ' + cols
+        );
+    }
+    if (!Number.isInteger(rows) || rows < 2) {
+        throw new RangeError(
+            'monochromeMesh: rows must be an integer >= 2, got ' + rows
+        );
+    }
+
+    const o = opts || {};
+    const mode = o.mode == null ? 'tinted' : o.mode;
+    const range = o.range == null ? [0, 1] : o.range;
+    const direction = o.direction == null ? 'diagonal' : o.direction;
+
+    if (mode !== 'tinted' && mode !== 'grayscale') {
+        throw new TypeError(
+            'monochromeMesh: mode must be "tinted" or "grayscale", got ' + mode
+        );
+    }
+    if (!Array.isArray(range) || range.length !== 2) {
+        throw new TypeError(
+            'monochromeMesh: range must be a two-element [lo, hi] array'
+        );
+    }
+    const lo = range[0];
+    const hi = range[1];
+    if (typeof lo !== 'number' || typeof hi !== 'number' ||
+        !(lo >= 0 && hi <= 1 && lo < hi)) {
+        throw new RangeError(
+            'monochromeMesh: range must satisfy 0 <= lo < hi <= 1, got [' +
+            lo + ', ' + hi + ']'
+        );
+    }
+    if (direction !== 'horizontal' && direction !== 'vertical' &&
+        direction !== 'diagonal' && direction !== 'radial') {
+        throw new TypeError(
+            'monochromeMesh: direction must be "horizontal", "vertical", ' +
+            '"diagonal", or "radial", got ' + direction
+        );
+    }
+
+    const c = mode === 'grayscale' ? 0 : base.c;
+    const h = base.h;
+    const span = hi - lo;
+    const cx = (cols - 1) / 2;
+    const cy = (rows - 1) / 2;
+    // Half-diagonal from center to a corner, used to normalize radial t.
+    const maxRadial = Math.sqrt(cx * cx + cy * cy);
+    // Diagonal length in grid units (top-left to bottom-right corner),
+    // used to normalize diagonal t.
+    const diagDenom = (cols - 1) + (rows - 1);
+
+    const total = cols * rows;
+    const stops = new Array(total);
+
+    for (let i = 0; i < total; i++) {
+        const col = i % cols;
+        const row = (i / cols) | 0;
+
+        let t;
+        if (direction === 'horizontal') {
+            t = cols === 1 ? 0 : col / (cols - 1);
+        } else if (direction === 'vertical') {
+            t = rows === 1 ? 0 : row / (rows - 1);
+        } else if (direction === 'diagonal') {
+            t = diagDenom === 0 ? 0 : (col + row) / diagDenom;
+        } else {
+            // radial: 0 at center, 1 at corners
+            const dx = col - cx;
+            const dy = row - cy;
+            t = maxRadial === 0 ? 0 : Math.sqrt(dx * dx + dy * dy) / maxRadial;
+        }
+
+        stops[i] = { l: lo + span * t, c, h };
+    }
+
+    return new MeshGradient(cols, rows, stops);
+}

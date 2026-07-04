@@ -72,6 +72,47 @@ Mesh interpolation modes (sampleAt's `mode` arg / rasterize's
 Legacy boolean accepted for sampleAt: `false` → bilinear, `true` → smooth.
 Rasterize also accepts `opts.smooth: true` as a legacy alias.
 
+## Monochrome mesh (v1.1.0)
+
+Factory for meshes where every control point shares base c/h (or c=0 for
+grayscale) and only L varies across the grid. Client-work-friendly:
+never looks like an "AI-generated random gradient" because the palette
+is fixed to one brand tone.
+
+    import { monochromeMesh, formatCssMesh } from '@zakkster/lite-gradient-studio';
+
+    // Brand-tinted mesh, L varies diagonally
+    const m = monochromeMesh({ l: 0.5, c: 0.06, h: 245 }, 3, 3);
+
+    // Or explicit direction + grayscale + printable-safe range
+    const gm = monochromeMesh(
+        { l: 0.5, c: 0, h: 0 },
+        4, 4,
+        { mode: 'grayscale', range: [0.05, 0.95], direction: 'radial' }
+    );
+
+    // Emit CSS without canvas
+    element.style.background = formatCssMesh(m);
+
+Options:
+- mode:       'tinted' (default) | 'grayscale'
+- range:      [lo, hi] with 0 <= lo < hi <= 1 (default [0, 1])
+- direction:  'horizontal' | 'vertical' | 'diagonal' (default) | 'radial'
+
+Directions:
+- horizontal:  L varies left-to-right, uniform per row
+- vertical:    L varies top-to-bottom, uniform per column
+- diagonal:    top-left corner (lo) to bottom-right corner (hi)
+- radial:      center (lo) outward to corners (hi)
+
+Returns a MeshGradient. All post-construction methods (setPointPosition,
+setPoint, sampleAt, rasterizeTo, etc.) work as normal — the factory just
+initializes the color basis. Deform handles off-grid to warp L across
+the surface without disturbing the brand palette.
+
+Pairs with @zakkster/lite-gradient's monochromeGradient(base, opts) which
+returns a continuous 1D Gradient; monochromeMesh returns a 2D MeshGradient.
+
 ## Multi-format export
 
     const state = { mode: 'linear', angle: 135, stops };

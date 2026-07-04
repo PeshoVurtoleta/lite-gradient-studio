@@ -13,9 +13,13 @@
 
 /**
  * OKLCH → linear sRGB triplet, with sRGB-gamut mapping by chroma reduction.
- * Output: [r, g, b] each in [0, 1].
+ * Output: `[r, g, b]` each in `[0, 1]`.
+ *
+ * Zero-GC path: pass a caller-owned 3-element array as `out`. The function
+ * writes into it and returns the same reference. Omit `out` (or pass null)
+ * to get a fresh allocated array — back-compat with the 3-arg call shape.
  */
-export function oklchToLinearSrgb(L, C, H) {
+export function oklchToLinearSrgb(L, C, H, out) {
     const hRad = H * Math.PI / 180;
     const cosH = Math.cos(hRad);
     const sinH = Math.sin(hRad);
@@ -38,6 +42,7 @@ export function oklchToLinearSrgb(L, C, H) {
     let [r, g, bb] = getRgb(C);
 
     if (r >= 0 && r <= 1 && g >= 0 && g <= 1 && bb >= 0 && bb <= 1) {
+        if (out) { out[0] = r; out[1] = g; out[2] = bb; return out; }
         return [r, g, bb];
     }
 
@@ -49,6 +54,7 @@ export function oklchToLinearSrgb(L, C, H) {
         if (r  < 0) r  = 0; else if (r  > 1) r  = 1;
         if (g  < 0) g  = 0; else if (g  > 1) g  = 1;
         if (bb < 0) bb = 0; else if (bb > 1) bb = 1;
+        if (out) { out[0] = r; out[1] = g; out[2] = bb; return out; }
         return [r, g, bb];
     }
 
@@ -64,6 +70,7 @@ export function oklchToLinearSrgb(L, C, H) {
             hi = midC;
         }
     }
+    if (out) { out[0] = fitR; out[1] = fitG; out[2] = fitB; return out; }
     return [fitR, fitG, fitB];
 }
 
@@ -111,7 +118,14 @@ function clampByte(v) {
 /**
  * Linear sRGB → OKLCH. Used by fromHex and the palette extractor.
  */
-export function linearSrgbToOklch(r, g, b) {
+/**
+ * Linear sRGB → OKLCH. Inverse of `oklchToLinearSrgb`.
+ *
+ * Zero-GC path: pass a caller-owned `{ l, c, h }` as `out`. The function
+ * writes into it and returns the same reference. Omit `out` (or pass null)
+ * to get a fresh allocated object — back-compat with the 3-arg call shape.
+ */
+export function linearSrgbToOklch(r, g, b, out) {
     const lLms = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
     const mLms = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
     const sLms = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
@@ -124,6 +138,7 @@ export function linearSrgbToOklch(r, g, b) {
     const C = Math.sqrt(a * a + bb * bb);
     let H = Math.atan2(bb, a) * 180 / Math.PI;
     if (H < 0) H += 360;
+    if (out) { out.l = L; out.c = C; out.h = H; return out; }
     return { l: L, c: C, h: H };
 }
 

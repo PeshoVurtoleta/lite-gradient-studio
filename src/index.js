@@ -21,7 +21,7 @@ export {
     sampleLut,
     packOklchSingle,
 } from './bake.js';
-export { MeshGradient, defaultMeshColor } from './mesh.js';
+export { MeshGradient, defaultMeshColor, monochromeMesh } from './mesh.js';
 export { formatCssLinear, formatCssRadial, formatCssConic } from './css-emitters.js';
 export { formatCssMesh } from './mesh-css.js';
 export {
