@@ -1,7 +1,7 @@
 {
   "name": "@zakkster/lite-gradient-studio",
-  "version": "1.1.0",
-  "description": "Authoring engine for OKLCH gradients — linear, radial, conic, and N×M mesh — with zero-GC rasterization, multi-format export (CSS/SCSS/Tailwind/JSON/SVG), and chroma-weighted palette extraction.",
+  "version": "1.2.0",
+  "description": "Authoring engine for OKLCH gradients \u2014 linear, radial, conic, and N\u00d7M mesh \u2014 with zero-GC rasterization, multi-format export (CSS/SCSS/Tailwind/JSON/SVG), and chroma-weighted palette extraction.",
   "author": "Zahary Shinikchiev <shinikchiev@yahoo.com>",
   "license": "MIT",
   "type": "module",
@@ -29,8 +29,8 @@
   },
   "dependencies": {
     "@zakkster/lite-color": "^1.0.6",
-    "@zakkster/lite-color-engine": "^1.0.0",
-    "@zakkster/lite-gradient": "^1.1.0"
+    "@zakkster/lite-color-engine": "^1.5.0",
+    "@zakkster/lite-gradient": "^1.2.0"
   },
   "keywords": [
     "gradient",

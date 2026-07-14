@@ -14,6 +14,7 @@
 import {
     bakeGradientToUint32,
     packOklchBufferToUint32,
+    packOklchBufferToUint32Dithered,
 } from '@zakkster/lite-color-engine';
 
 const EVEN_SPACING_EPS = 1e-9;
@@ -138,4 +139,39 @@ export function packOklchSingle(l, c, h, alpha = 1) {
     _packScratch[1] = c;
     _packScratch[2] = h;
     return packOklchBufferToUint32(_packScratch, 0, alpha);
+}
+
+/**
+ * Scalar-arg convenience wrapper around lite-color-engine v1.5's
+ * `packOklchBufferToUint32Dithered`. Same output byte order (RGBA-LE),
+ * same gamma-encode semantics — the only difference from `packOklchSingle`
+ * is a threshold-offset applied at the round step: `byte = (enc*255 + noise01) | 0`
+ * instead of `(enc*255 + 0.5) | 0`.
+ *
+ * Contract from the engine (restated for T2 D8):
+ *   - The **same** noise value is used for R, G, and B at one pixel —
+ *     luminance-patterned dither, no chroma speckle.
+ *   - Alpha is undithered (banding on alpha is rarely visible and would
+ *     interact badly with premultiplication).
+ *   - `noise01 = 0.5` reproduces `packOklchSingle` exactly (identity
+ *     anchor — trivially provable by the +0.5 rounding in the plain
+ *     packer, which is what the dithered form emits at that noise value).
+ *
+ * Zero-GC: reuses the module-scoped `_packScratch` Float32Array(3) that
+ * `packOklchSingle` uses. Consumers must not call both in reentrant
+ * contexts (the studio rasterizers never do — one loop, one packer).
+ *
+ * @param {number} l  OKLCH lightness (0..1)
+ * @param {number} c  OKLCH chroma (~0..0.4)
+ * @param {number} h  OKLCH hue in degrees
+ * @param {number} alpha  (0..1); undithered
+ * @param {number} noise01  Threshold offset in [0, 1). Typically `(tile[i] + 0.5) / 256`
+ *   where `tile` is `getBlueNoise64()` from the engine.
+ * @returns {number} Uint32 RGBA-LE pixel.
+ */
+export function packOklchSingleDithered(l, c, h, alpha, noise01) {
+    _packScratch[0] = l;
+    _packScratch[1] = c;
+    _packScratch[2] = h;
+    return packOklchBufferToUint32Dithered(_packScratch, 0, alpha, noise01);
 }

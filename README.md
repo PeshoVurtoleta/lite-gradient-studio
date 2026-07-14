@@ -8,6 +8,7 @@
 [![npm bundle size](https://img.shields.io/bundlephobia/minzip/@zakkster/lite-gradient-studio?style=for-the-badge)](https://bundlephobia.com/result?p=@zakkster/lite-gradient-studio)
 [![npm downloads](https://img.shields.io/npm/dm/@zakkster/lite-gradient-studio?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-gradient-studio)
 [![npm total downloads](https://img.shields.io/npm/dt/@zakkster/lite-gradient-studio?style=for-the-badge&color=blue)](https://www.npmjs.com/package/@zakkster/lite-gradient-studio)
+![Tree-Shakeable](https://img.shields.io/badge/tree--shakeable-yes-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Types-informational)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
@@ -283,6 +284,105 @@ Direct format functions are also exported (`toCss1d`, `toScss1d`, `toTailwind1d`
 | `bakeGradientToLut(gradient, resolution?, opts?)` | Pre-bake a 1D gradient into a Uint32Array LUT. Returns the LUT. `resolution` defaults to 256. `opts.easeFn` lets you apply easing on the evenly-spaced path; `opts.packer` overrides the default packer. |
 | `sampleLut(lut, t)` | Read a baked LUT at `t ∈ [0, 1]`. Returns the packed ARGB `Uint32` at that index. |
 | `flattenStopsToBuffer(gradient, out?)` | Write OKLCH stops to a Float32Array as `[L, C, H, L, C, H, ...]` (GPU-upload friendly). Optional `out` buffer reused if large enough. |
+
+## Toroidal mesh (v1.2.0 "Tiles")
+
+`MeshGradient` gains a fourth constructor argument:
+
+```js
+new MeshGradient(cols, rows, stops, { wrapX: true, wrapY: true });
+```
+
+Both flags default to `false` and are independent — turn on `wrapX` for a
+cylinder, both for a torus. Wrap is structural: it changes the UV period,
+the cell count, and the default control-point positions in one atomic
+step. The instance carries `readonly wrapX` and `readonly wrapY` fields
+for downstream consumers to branch on.
+
+**The flagship:** cubic mode has real **C¹ continuity across the seam**.
+`_sampleAtCubic` reads real neighbours across the wrap boundary via
+modulo indexing instead of clamping to a duplicated endpoint. Bilinear
+and smooth get seamlessness from the wrap coord alone; cubic is where
+wrap earns "exists in no other library."
+
+Sampling accepts any float on wrapped axes — a raw animation phase, a
+negative, arbitrary magnitude:
+
+```js
+let phase = 0;
+function frame(dt) {
+    phase += dt * 0.0002;
+    mesh.sampleAt(u + phase, v, out, 'cubic');   // no `phase % 1` needed
+}
+```
+
+**Tiled rasterization.** On wrapped axes, `rasterizeTo` samples the
+period (`x / width`, no `- 1` divisor), so pixel column 0 of the "next
+tile" lands exactly at `u ≡ 0` — `drawImage`-based tile scrolling butts
+perfectly with no duplicated edge column.
+
+**Deformed + wrap fails loudly.** `rasterizeDeformedTo` throws with
+`err.code = 'WRAP_DEFORMED_UNSUPPORTED'` when called on a wrapped mesh.
+Ghost-quad seam crossing (Newton solve against wrapped corner positions)
+is real work, deferred to v1.3. Consumer code can branch on the code
+string cleanly rather than string-matching messages.
+
+**Wrap-aware defaults.** `defaultMeshColor(col, row, cols, rows, wrapX?,
+wrapY?)` gains trailing optional args. When set, the aperiodic
+`240 + 120·cT` hue sweep is swapped for a uniform `360/cols` step, and
+row-driven L switches to `cos(2π · rT)` so the top and bottom rows
+agree. Four-arg calls are byte-identical to v1.1.0.
+
+**Byte-parity guarantee.** The non-wrap path is untouched — 218
+pre-existing tests pass unmodified, benches within noise of v1.1.0.
+
+**Cascade note.** Blue-noise dithering (D7/D8 in the Tiles roadmap) lands
+in v1.2.0 with its full gate — see below.
+
+## Blue-noise dither (v1.2.0)
+
+`rasterizeTo` gains one flag:
+
+```js
+mesh.rasterizeTo(buf, W, H, { dither: true, interpolation: 'smooth' });
+```
+
+Delegates to `@zakkster/lite-color-engine >= 1.5.0`'s dithered packer
+and shared 64×64 void-and-cluster tile. Per-pixel overhead is roughly
+24% on typical raster sizes — one tile lookup plus a threshold-offset
+gamma round replacing the standard `+ 0.5` rounding.
+
+**Contract, exhaustively tested:**
+
+- **`noise01 = 0.5` reproduces the plain packer exactly** — the identity
+  anchor. Consequence: dither adds an *at-most* ±1 per-channel deviation
+  from the undithered output.
+- **Same noise value shared R/G/B per pixel** — luminance-patterned
+  dither, no chroma speckle. On a chroma-free mesh, dithered output is
+  chroma-free too (verified).
+- **Alpha never dithered.** Byte-parity with the undithered α.
+- **`dither: false` or absent → byte-identical to v1.2.0.** The branch
+  is resolved once per rasterize call, two loop bodies, no per-pixel
+  branch cost when off.
+- **Composes with wrap.** `rasterizeTo` with both `wrapX` and `dither`
+  set produces per-channel ±1 deviation and preserves seamlessness. The
+  two features are orthogonal — wrap operates on sampling, dither on
+  packing.
+
+**Where it shines:** shallow ramps and near-monochrome fills where the
+undithered output shows visible 1-byte-wide bands. On a 4-stop L=0.30..0.34
+gradient at 256px width, dither cuts the longest identical-pixel run by
+more than 33% (from ~64 pixels undithered to ~40 dithered).
+
+**Where it doesn't help:** high-contrast meshes where color transitions
+already span multiple integer bytes per column. Dither is bounded ±1;
+that's a lot of visual improvement on smooth surfaces, but invisible on
+sharp gradients.
+
+**Not on `rasterizeDeformedTo`.** The deformed rasterizer silently
+ignores the flag (also throws `WRAP_DEFORMED_UNSUPPORTED` on wrapped
+meshes, unchanged). Deformed + dither is scheduled with the v1.3
+ghost-quad seam work.
 
 ## Benchmarks
 

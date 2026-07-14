@@ -144,6 +144,75 @@ describe('zero-allocation hot path', () => {
         assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
     });
 
+    // v1.2.0 wrap paths — alloc invariant must hold on wrapped meshes too.
+    // The wrap arithmetic (u - Math.floor(u), modulo indices) is pure ints
+    // and floats, no closures or transient objects, so the ceiling matches
+    // the non-wrap raster.
+    test('MeshGradient.rasterizeTo wrapX (cylinder) x 100 frames at 128x128 stays under 128 KB', { skip }, () => {
+        const m = new MeshGradient(3, 3, undefined, { wrapX: true });
+        const W = 128, H = 128;
+        const buf = new Uint32Array(W * H);
+        for (let i = 0; i < 5; i++) m.rasterizeTo(buf, W, H);
+
+        const delta = heapDelta(() => {
+            for (let i = 0; i < 100; i++) m.rasterizeTo(buf, W, H);
+        });
+        assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
+    });
+
+    test('MeshGradient.rasterizeTo wrapX+wrapY (torus) x 100 frames at 128x128 stays under 128 KB', { skip }, () => {
+        const m = new MeshGradient(3, 3, undefined, { wrapX: true, wrapY: true });
+        const W = 128, H = 128;
+        const buf = new Uint32Array(W * H);
+        for (let i = 0; i < 5; i++) m.rasterizeTo(buf, W, H);
+
+        const delta = heapDelta(() => {
+            for (let i = 0; i < 100; i++) m.rasterizeTo(buf, W, H);
+        });
+        assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
+    });
+
+    test('MeshGradient.rasterizeTo wrapX cubic x 100 frames at 128x128 stays under 128 KB', { skip }, () => {
+        // The flagship path: modulo neighbour indexing across the seam.
+        const m = new MeshGradient(4, 4, undefined, { wrapX: true });
+        const W = 128, H = 128;
+        const buf = new Uint32Array(W * H);
+        for (let i = 0; i < 5; i++) m.rasterizeTo(buf, W, H, { interpolation: 'cubic' });
+
+        const delta = heapDelta(() => {
+            for (let i = 0; i < 100; i++) m.rasterizeTo(buf, W, H, { interpolation: 'cubic' });
+        });
+        assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
+    });
+
+    // v1.2.0 dither paths — same invariant. The engine's blue-noise tile
+    // decode is a one-time module-level allocation (before the timed loop
+    // via warm-up), and the per-pixel packer wrapper reuses the same
+    // Float32Array(3) scratch as the undithered packer.
+    test('MeshGradient.rasterizeTo dither x 100 frames at 128x128 stays under 128 KB', { skip }, () => {
+        const m = make3x3();
+        const W = 128, H = 128;
+        const buf = new Uint32Array(W * H);
+        for (let i = 0; i < 5; i++) m.rasterizeTo(buf, W, H, { dither: true });
+
+        const delta = heapDelta(() => {
+            for (let i = 0; i < 100; i++) m.rasterizeTo(buf, W, H, { dither: true });
+        });
+        assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
+    });
+
+    test('MeshGradient.rasterizeTo wrapX + dither x 100 frames at 128x128 stays under 128 KB', { skip }, () => {
+        const m = new MeshGradient(4, 4, undefined, { wrapX: true });
+        const W = 128, H = 128;
+        const buf = new Uint32Array(W * H);
+        for (let i = 0; i < 5; i++) m.rasterizeTo(buf, W, H, { dither: true });
+
+        const delta = heapDelta(() => {
+            for (let i = 0; i < 100; i++) m.rasterizeTo(buf, W, H, { dither: true });
+        });
+        assert.ok(delta < 128 * KB, `heap delta ${delta} >= 128 KB`);
+    });
+
     test('packOklchSingle x 1M stays under 16 KB', { skip }, () => {
         for (let i = 0; i < 5000; i++) packOklchSingle(0.5, 0.2, 240, 1);
 

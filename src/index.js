@@ -20,6 +20,7 @@ export {
     flattenStopsToBuffer,
     sampleLut,
     packOklchSingle,
+    packOklchSingleDithered,
 } from './bake.js';
 export { MeshGradient, defaultMeshColor, monochromeMesh } from './mesh.js';
 export { formatCssLinear, formatCssRadial, formatCssConic } from './css-emitters.js';

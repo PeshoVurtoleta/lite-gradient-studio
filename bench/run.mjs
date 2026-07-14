@@ -92,6 +92,16 @@ console.log('\nMesh kernel');
     bench('MeshGradient.sampleAt(u,v) — 5×5 smooth', 1, () => m5.sampleAt(0.5, 0.5, scratch, 'smooth'));
     bench('MeshGradient.sampleAt(u,v) — 5×5 cubic',  1, () => m5.sampleAt(0.5, 0.5, scratch, 'cubic'));
 
+    // v1.2.0 wrap benches — establish empirical ceilings for the new paths.
+    // Wrap-off numbers above stay comparable to v1.1.0. Wrap-on ceilings
+    // land here after the first honest measurement of the implementation.
+    const m5wx = new MeshGradient(5, 5, undefined, { wrapX: true });
+    const m5wt = new MeshGradient(5, 5, undefined, { wrapX: true, wrapY: true });
+    bench('MeshGradient.sampleAt — 5×5 smooth, wrapX', 1, () => m5wx.sampleAt(0.5, 0.5, scratch, 'smooth'));
+    bench('MeshGradient.sampleAt — 5×5 smooth, torus', 1, () => m5wt.sampleAt(0.5, 0.5, scratch, 'smooth'));
+    bench('MeshGradient.sampleAt — 5×5 cubic,  wrapX', 1, () => m5wx.sampleAt(0.5, 0.5, scratch, 'cubic'));
+    bench('MeshGradient.sampleAt — 5×5 cubic,  torus', 1, () => m5wt.sampleAt(0.5, 0.5, scratch, 'cubic'));
+
     // Rasterize. Allocate buffer once outside the timing loop.
     const W = 256, H = 256;
     const buf = new Uint32Array(W * H);
@@ -100,6 +110,27 @@ console.log('\nMesh kernel');
     });
     bench(`rasterizeTo — 5×5 → ${W}×${H} (${W * H} px)`, W * H, () => {
         m5.rasterizeTo(buf, W, H, { mode: 'smooth' });
+    });
+    bench(`rasterizeTo — 5×5 wrapX → ${W}×${H}`, W * H, () => {
+        m5wx.rasterizeTo(buf, W, H, { mode: 'smooth' });
+    });
+    bench(`rasterizeTo — 5×5 torus → ${W}×${H}`, W * H, () => {
+        m5wt.rasterizeTo(buf, W, H, { mode: 'smooth' });
+    });
+    bench(`rasterizeTo — 5×5 cubic wrapX → ${W}×${H}`, W * H, () => {
+        m5wx.rasterizeTo(buf, W, H, { mode: 'cubic' });
+    });
+    // v1.2.0 dither benches — the dithered path pays one extra tile lookup
+    // + a threshold-offset gamma round per pixel. Ceilings set here for T3
+    // parity checks.
+    bench(`rasterizeTo — 5×5 dither → ${W}×${H}`, W * H, () => {
+        m5.rasterizeTo(buf, W, H, { mode: 'smooth', dither: true });
+    });
+    bench(`rasterizeTo — 5×5 wrapX + dither → ${W}×${H}`, W * H, () => {
+        m5wx.rasterizeTo(buf, W, H, { mode: 'smooth', dither: true });
+    });
+    bench(`rasterizeTo — 5×5 cubic + dither → ${W}×${H}`, W * H, () => {
+        m5.rasterizeTo(buf, W, H, { mode: 'cubic', dither: true });
     });
     bench(`rasterizeDeformedTo — 5×5 → ${W}×${H}`, W * H, () => {
         m5.rasterizeDeformedTo(buf, W, H, { mode: 'smooth' });

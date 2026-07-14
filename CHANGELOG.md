@@ -5,6 +5,237 @@ All notable changes to `@zakkster/lite-gradient-studio` are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This library follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] — 2026-07-14  "Tiles + Dither"
+
+The **toroidal-mesh + dither release**. Both roadmap tracks (D1-D6 wrap,
+D7-D8 dither) land together.
+
+> Originally cut as two patches, `1.2.0` (wrap) and `1.2.1` (dither), on the
+> assumption that 1.2.0 had shipped. It had not — npm's latest is 1.1.0 — so a
+> patch bump on top of an unpublished minor would have invented a version that
+> never existed. Folded into a single minor.
+
+---
+
+## Wrap (D1-D6)
+
+The **toroidal-mesh release**. `MeshGradient` becomes cylindrical or
+toroidal on demand, with a real C¹ seam in cubic mode — the flagship
+feature: read real neighbours across the boundary via modulo indexing
+instead of clamping to duplicated endpoints.
+
+### Added — Structural wrap on the constructor
+
+`new MeshGradient(cols, rows, stops, { wrapX, wrapY })`. Both flags are
+optional, default `false`, and independent (torus = both on; cylinder =
+one on). Wrap is stored on the instance as `readonly wrapX` / `readonly
+wrapY` for downstream consumers to branch on.
+
+- **UV period.** On a wrapped axis the cell count is `cols`, not
+  `cols - 1`. Default control-point positions become `col / cols`.
+- **`sampleAt` (bilinear + smooth).** Wrapped axis wraps the coord via
+  `u - Math.floor(u)`, then reads the last-cell neighbour with `(col + 1)
+  % cols` — so `sampleAt(1, v)` is exactly `sampleAt(0, v)`, any float
+  is a valid position (raw accumulating animation phase, negatives,
+  arbitrary magnitudes).
+- **`sampleAt` cubic — C¹ continuity across the seam.** The whole
+  reason wrap exists: `_sampleAtCubic` and `_cubicRow` use modulo
+  neighbour indexing on wrapped axes (`((col - 1) % cols + cols) % cols`
+  and `(col + 2) % cols`). Catmull-Rom now reads real neighbours across
+  the boundary, giving a genuinely smooth seam instead of a spline that
+  degrades toward bilinear at the edge. Bilinear and smooth get
+  seamlessness from the wrap coord alone; cubic is where wrap earns
+  "exists in no other library."
+- **`rasterizeTo` period sampling.** On wrapped axes, `u = x / width`
+  (drops the `- 1` divisor). Pixel column 0 of the "next tile" lands
+  exactly at `u ≡ 0` — no duplicated edge column, so `drawImage`-based
+  tiling of the rasterized output butts perfectly.
+- **`rasterizeDeformedTo` fails loudly on wrap.** Throws with
+  `err.code = 'WRAP_DEFORMED_UNSUPPORTED'` when called on a wrapped
+  mesh. Deformed + wrap needs ghost quads that cross the seam (Newton
+  solve against wrapped corner positions) — real work deferred to v1.3.
+  Silent seamed output would be worse than the error; consumer code can
+  branch on the code string instead of matching messages.
+- **`defaultMeshColor` — wrap-aware defaults.** Trailing `wrapX` /
+  `wrapY` args (backward-compat: absent → v1.1.0 output byte-identical).
+  When `wrapX`, hue advances a uniform `360/cols` per column (no
+  aperiodic compression at the wrap boundary). When `wrapY`, the row
+  drift becomes sinusoidal and L switches to `cos(2π · rT)` so
+  top and bottom rows agree.
+
+### Guarantees
+
+- **Byte-parity on the non-wrap path.** All 218 pre-existing tests pass
+  unmodified. The alloc test file gains three new wrapped-rasterize
+  invariants (all under the same 128 KB / 100-frame ceiling). Every
+  non-wrap code path — constructor with no opts, `sampleAt` on a
+  non-wrapped mesh, `rasterizeTo` on a non-wrapped mesh — walks the
+  exact same v1.1.0 code, byte for byte.
+- **Empirical wrap-on ceilings (this container, node 22):**
+
+  | path | v1.1.0 baseline | v1.2.0 wrapped | overhead |
+  |---|---|---|---|
+  | `sampleAt` 5×5 smooth | 5.2M ops/s | 5.0M wrapX / 4.7M torus | 4–10% |
+  | `sampleAt` 5×5 cubic  | 1.9M ops/s | 2.0M wrapX / 2.0M torus | within noise |
+  | `rasterizeTo` 5×5 → 256² | 2.1M px/s | 2.3M px/s wrapped     | JIT ties or wins |
+  | `rasterizeTo` 5×5 cubic → 256² | (not measured) | 2.3M px/s wrapX | ceiling set |
+
+  Wrap paths came in on parity or a hair faster; the branch structure
+  turns out to be slightly cleaner for the JIT than the non-wrap
+  interior-clamp branches. Empirical, not prior-based — the ceilings
+  above are the number to beat in T3.
+
+### Peer bumps
+
+- `@zakkster/lite-color-engine`: `^1.0.0 → ^1.5.0`. T3's dither work
+  will delegate to engine v1.5's `getBlueNoise64` + dithered packers.
+- `@zakkster/lite-gradient`: `^1.1.0 → ^1.2.0`. Picks up `Gradient`'s
+  new `closed: true` for downstream `formatCssConic` work.
+
+### Notes
+
+- 31 new wrap tests in `test/mesh-wrap.test.js` covering: D1 (opts +
+  guards + cols=2 wrapped legality), D2 (period spacing, seam identity
+  in bilinear/smooth, raw-phase and negative-u sampling, tile-equality
+  across 21 sample points, non-wrap axis retains clamp), D3 (cubic
+  seam identity, C¹ derivative test via central differences,
+  real-neighbour indexing verified against a deliberately non-uniform
+  L mesh), D4 (rasterize period sampling, non-wrap y retains closed
+  interval), D5 (WRAP_DEFORMED_UNSUPPORTED on wrapX / wrapY / torus,
+  non-wrap deformed still works), D6 (byte-parity of the four-arg
+  form, periodic hue step and L symmetry, integration with
+  `MeshGradient` defaults).
+- Wrap suite: 252 green (218 pre-existing + 31 wrap + 3 wrap-alloc
+  invariants) at the point wrap landed; 271 with dither folded in.
+
+---
+
+## Known / measured — the allocation gate is a leak gate
+
+`test/allocation.test.js` asserts things like *"MeshGradient.rasterizeTo x 100 frames
+at 128x128 stays under 128 KB"*, measured as `gc(); gc(); heapUsed` before and after.
+That is a **leak** gate. It measures RETAINED memory, and it is structurally blind to
+short-lived garbage — a value allocated and dropped inside the loop is scavenged
+before the second sample and never appears in the delta.
+
+`rasterizeTo` does allocate, and the gate cannot see it. Measured by counting GC
+events over a fixed wall-clock budget, against a zero-alloc arithmetic control and a
+one-object-per-pixel control in the same process:
+
+```
+zero-alloc floor (arithmetic)          1 GC / 6 s
+allocating ceiling (1 obj/pixel)    3587 GC / 6 s
+rasterizeTo bilinear, no dither       72 GC / 6 s     <- not the floor
+```
+
+The source is not a `new` anywhere in the loop — there isn't one. It is
+`const tmp = { l: 0, c: 0, h: 0, a: 1 }`. **V8 removed double-field unboxing in 9.x**,
+so every write of a non-Smi double to an object property boxes a `HeapNumber` — and
+`sampleAt` writes four of them per pixel, 16,384 times per raster. Isolated:
+
+```
+write 4 doubles into an OBJECT,        16384x   ->  3519 GC
+write 4 doubles into a Float64Array,   16384x   ->   497 GC
+write 4 Smis   into an OBJECT,         16384x   ->   496 GC
+```
+
+**Cost, in the only unit that matters: 0.37%–0.95% of wall time** in a synthetic loop
+running 150 rasters/sec; roughly half that at a realistic 60/sec. It is real, it is
+measurable, and it does not matter.
+
+Not fixed, deliberately. The only way to remove it is a `Float64Array` scratch, which
+means changing `sampleAt(u, v, out, mode)`'s public object-out contract or duplicating
+the sampler. That is a bad trade for half a percent. Logged with the number so the
+call is informed.
+
+What *should* change is the gate's name and its comment, which currently imply it
+proves zero-GC. It proves no leak. Those are different claims, and the ecosystem has
+now made this mistake in three packages.
+
+---
+
+## Dither (D7-D8)
+
+The dither track (D7/D8). One flag on `rasterizeTo` and one scalar-arg
+packer wrapper. `dither: false` (or absent) is byte-identical to the
+undithered path — verified, not asserted.
+
+### Added — `opts.dither: true` on `MeshGradient.rasterizeTo`
+
+Delegates to `@zakkster/lite-color-engine >= 1.5.0`'s
+`packOklchBufferToUint32Dithered` + `getBlueNoise64` — the roadmap's D7
+already ratified the engine as the noise-source owner, so studio
+consumes and does not duplicate:
+
+- **Per-pixel tile lookup** — `tile[((y & 63) << 6) | (x & 63)]`. Pure
+  bit ops (torus wrap via mask, row stride via shift), zero-GC trivially.
+- **Same noise value shared R/G/B at a pixel** — luminance-patterned
+  dither, no chroma speckle. Verified by a test that rasterizes a
+  chroma-free mesh with dither on and asserts R === G === B per pixel.
+- **Alpha undithered.** Verified against undithered α on a distinctive
+  α mesh.
+- **`noise01 = 0.5` reproduces the plain packer exactly** — the identity
+  anchor from D8, verified across seven representative OKLCH triplets
+  covering different gamma-encode regions and alpha values.
+- **`dither: false` or absent → byte-identical to v1.2.0.** The branch
+  is resolved once per rasterize call, two loop bodies — no per-pixel
+  branch cost on the undithered path. Six regression tests assert this
+  across bilinear, smooth, cubic, wrapped, and `dither: false` vs
+  absent-opt.
+
+### Added — `packOklchSingleDithered(l, c, h, alpha, noise01)`
+
+New export from `./bake.js`. Scalar-arg convenience wrapper around the
+engine's `packOklchBufferToUint32Dithered` using the same
+`Float32Array(3)` scratch as `packOklchSingle` — no additional module-
+level allocation, safe to alternate between plain and dithered calls
+in the rasterize inner loop.
+
+### Empirical dither ceilings (node 22, container)
+
+| path | undithered | dithered | overhead |
+|---|---|---|---|
+| `rasterizeTo` 5×5 smooth → 256² | 2.1M px/s | 1.6M px/s | ~24% |
+| `rasterizeTo` 5×5 wrapX+smooth  | 2.5M px/s | 1.9M px/s | ~24% |
+| `rasterizeTo` 5×5 cubic         | (v1.2.0 gate) | 1.7M px/s | ceiling set |
+
+The 24% overhead pays for one blue-noise tile lookup + a threshold-offset
+gamma-encode round per pixel (the engine's dithered packer inlines the
+sRGB gamma-encode inline instead of calling out to `linearToSrgbByte`,
+which is why the overhead is small).
+
+### Test count
+
++15 dither tests in `test/mesh-dither.test.js`:
+- Off-flag byte parity: 6 tests (bilinear, smooth, cubic, wrapped,
+  `dither: false` explicit, bare-opts).
+- `noise01 = 0.5` identity anchor: 1 test, 7 OKLCH samples.
+- Determinism: 2 tests (plain, wrap+dither composition).
+- Bounded deviation ±1 per channel: 2 tests (typical mesh, shallow-ramp).
+- Contract properties: 2 tests (alpha never dithered, R === G === B on
+  chroma-free mesh).
+- Run-length shortening on shallow ramp: 1 test.
+- Zero-GC under `--expose-gc`: 1 test (128 KB / 100 frames).
+
++2 dither-alloc invariants in `test/allocation.test.js` (plain dither,
+wrapX+dither).
+
+Total suite: **269/269 green.** Byte-parity gate on the 218 v1.1.0
+tests still holds unmodified.
+
+### Notes
+
+- `rasterizeDeformedTo` still throws `WRAP_DEFORMED_UNSUPPORTED` on
+  wrapped meshes (unchanged from v1.2.0). Dither on `rasterizeDeformedTo`
+  silently ignores the flag — deformed + dither is scheduled to land
+  alongside the v1.3 ghost-quad seam work, so consumers on 1.2.x
+  should treat this as "dither is rasterizeTo only."
+- The engine's blue-noise tile is decoded once at first use (~sub-ms
+  from a base64 blob into a shared `Uint8Array(4096)`). Subsequent
+  calls return the same reference — the alloc test's warm-up phase
+  triggers the one-time decode before the timed loop.
+- No peer bumps — engine v1.5.0 was already the floor from v1.2.0.
+
 ## [1.1.0] — 2026-07-03
 
 ### Added — Monochrome mesh

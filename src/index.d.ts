@@ -66,6 +66,23 @@ export interface MeshRasterizeOptions {
     interpolation?: InterpolationMode;
     /** Legacy boolean: `true` is equivalent to `interpolation: 'smooth'`. */
     smooth?: boolean;
+    /**
+     * v1.2.0 — blue-noise dithering (D8). When `true`, `rasterizeTo` uses
+     * `@zakkster/lite-color-engine`'s dithered packer with per-pixel
+     * threshold offsets from the engine's shared 64×64 void-and-cluster
+     * tile. Every channel is within ±1 of the undithered output; the
+     * same offset is shared across R/G/B at each pixel (no chroma
+     * speckle); alpha is undithered.
+     *
+     * `dither: false` (or absent) walks the same code as v1.2.0 — the
+     * byte-parity guarantee for undithered output is preserved.
+     *
+     * Not yet supported on `rasterizeDeformedTo` — throws
+     * `WRAP_DEFORMED_UNSUPPORTED` first if the mesh is wrapped, and
+     * silently ignores the flag otherwise (deformed + dither planned
+     * alongside the v1.3 ghost-quad seam work).
+     */
+    dither?: boolean;
 }
 
 /**
@@ -73,19 +90,58 @@ export interface MeshRasterizeOptions {
  * mesh. Pure function. Used internally by MeshGradient when no `stops` array
  * is supplied; re-exported for callers who want to inspect or override the
  * default field.
+ *
+ * v1.2.0 — trailing `wrapX` / `wrapY` args are optional and default to
+ * false. When set, the corresponding axis uses a periodic parameterization
+ * (uniform 360/cols hue step for wrapX; sinusoidal L and drift for wrapY)
+ * so the default mesh doesn't compress aperiodic sweeps into the final
+ * cell. Four-arg calls stay byte-identical to v1.1.0.
  */
 export function defaultMeshColor(
     col: number,
     row: number,
     cols: number,
     rows: number,
+    wrapX?: boolean,
+    wrapY?: boolean,
 ): OklchColor;
 
+/**
+ * Constructor options for {@link MeshGradient} (v1.2.0+).
+ *
+ * Wrap flags are structural — they change the UV period, the cell count,
+ * and the default control-point positions. Both flags are independent
+ * (torus = both on; cylinder = one on). Non-wrap behaviour is byte-parity
+ * with v1.1.0 when opts is absent or both flags are false.
+ */
+export interface MeshGradientOptions {
+    /**
+     * Treat the X axis as cyclic. `sampleAt` wraps u via `u - Math.floor(u)`,
+     * `rasterizeTo` samples the period (`x / width`, not `x / (width - 1)`),
+     * cubic mode reads real neighbours across the seam via modulo indexing
+     * (C¹ continuity). `rasterizeDeformedTo` throws
+     * `WRAP_DEFORMED_UNSUPPORTED` — ghost-quad seam crossing is deferred
+     * to v1.3.
+     */
+    wrapX?: boolean;
+    /** Symmetric to {@link wrapX} on the Y axis. */
+    wrapY?: boolean;
+}
+
 export class MeshGradient {
-    constructor(cols: number, rows: number, stops?: ReadonlyArray<MeshStop>);
+    constructor(
+        cols: number,
+        rows: number,
+        stops?: ReadonlyArray<MeshStop>,
+        opts?: MeshGradientOptions,
+    );
 
     readonly cols: number;
     readonly rows: number;
+    /** v1.2.0 — reflects the constructor opts; `false` when opts absent. */
+    readonly wrapX: boolean;
+    /** v1.2.0 — reflects the constructor opts; `false` when opts absent. */
+    readonly wrapY: boolean;
     readonly stops: MeshStopFull[];
 
     /** Read the (col, row) color into a caller-owned out. Zero-GC. */
@@ -108,6 +164,9 @@ export class MeshGradient {
      *   - true              -> 'smooth' (smoothstep)
      *   - 'cubic'           -> Catmull-Rom 2D
      *   - any of the strings above explicitly
+     *
+     * v1.2.0 — on wrapped axes, u/v accept any float; input is period-wrapped
+     * via `u - Math.floor(u)` before mapping to a cell coord.
      */
     sampleAt<T extends Partial<OklchColorA>>(
         u: number,
@@ -119,6 +178,10 @@ export class MeshGradient {
     /**
      * Rasterize on the REGULAR grid into a packed-RGBA Uint32Array (little-
      * endian byte order; aliasable as Uint8ClampedArray for ImageData).
+     *
+     * v1.2.0 — on wrapped axes, samples the period (drops the `- 1`
+     * divisor) so pixel column 0 of the "next tile" would land at u ≡ 0,
+     * enabling seamless `drawImage`-style tiling.
      */
     rasterizeTo(
         out: Uint32Array,
@@ -131,6 +194,10 @@ export class MeshGradient {
      * Rasterize honoring control-point positions (deformable mesh). Pixels
      * outside any quad are LEFT UNTOUCHED -- callers that want a clean
      * canvas must fill or zero `out` first.
+     *
+     * v1.2.0 — throws with `err.code = 'WRAP_DEFORMED_UNSUPPORTED'` when
+     * called on a wrapped mesh. Ghost-quad seam crossing is planned for
+     * v1.3; the current behaviour is loud failure instead of silent seams.
      */
     rasterizeDeformedTo(
         out: Uint32Array,
@@ -312,6 +379,21 @@ export function sampleLut(lut: Uint32Array, t: number): number;
 
 /** Pack a single OKLCH color directly to a 32-bit RGBA value. */
 export function packOklchSingle(l: number, c: number, h: number, alpha?: number): number;
+
+/**
+ * v1.2.0 — dithered scalar packer. Threshold-offset gamma round via
+ * `noise01`: `byte = (encoded * 255 + noise01) | 0`. `noise01 = 0.5`
+ * reproduces `packOklchSingle` exactly (identity anchor). Same buffer
+ * scratch as `packOklchSingle` — safe to alternate between calls, but
+ * do NOT interleave with the plain packer in reentrant contexts.
+ */
+export function packOklchSingleDithered(
+    l: number,
+    c: number,
+    h: number,
+    alpha: number,
+    noise01: number,
+): number;
 
 // ---------------------------------------------------------------------------
 //  Palette extraction

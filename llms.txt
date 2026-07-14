@@ -214,3 +214,45 @@ mostly stuck on HSL or sRGB.
 This library is that layer. Built once, factored to compose, tuned for
 production rasterization. Pair it with @zakkster/lite-color (the OKLCH
 foundation) and any UI framework to ship a gradient editor.
+
+## v1.2.0 "Tiles" — toroidal mesh
+
+`new MeshGradient(cols, rows, stops, { wrapX, wrapY })` — 4th opts arg with two independent flags (torus = both, cylinder = one). Both default `false`; when off, all code paths byte-identical to v1.1.0.
+
+Structural wrap semantics:
+- UV period: cell count is `cols` (not `cols - 1`) on wrapped axes; default control-point positions become `col / cols`.
+- `sampleAt` on wrapped axes: `u = u - Math.floor(u)` replaces clamp; last-cell neighbour uses `(col + 1) % cols`. `sampleAt(0, v) === sampleAt(1, v)` exactly; any float is a valid coord (raw accumulating animation phase, negatives).
+- Cubic mode + wrap = C¹ across the seam. `_sampleAtCubic` and `_cubicRow` use modulo neighbour indexing (`((col - 1) % cols + cols) % cols` and `(col + 2) % cols`) so Catmull-Rom reads real cells across the boundary. The flagship — no other mesh gradient lib does this.
+- `rasterizeTo` on wrapped axes: `u = x / width` (drops the `- 1`). Pixel column 0 of the "next tile" lands at u ≡ 0, so `drawImage`-based tiling of the rasterized output butts perfectly.
+- `rasterizeDeformedTo` throws `err.code = 'WRAP_DEFORMED_UNSUPPORTED'` on a wrapped mesh. Ghost-quad seam crossing is v1.3 work.
+- `defaultMeshColor` accepts trailing `wrapX`, `wrapY` args. When set, hue advances a uniform `360/cols` per column (wrapX) or L switches to `cos(2π · rT)` and drift becomes sinusoidal (wrapY). Four-arg form byte-identical to v1.1.0.
+
+Instance exposes `readonly wrapX: boolean`, `readonly wrapY: boolean` for downstream consumers.
+
+Peer bumps: `@zakkster/lite-color-engine` `^1.5.0`, `@zakkster/lite-gradient` `^1.2.0`.
+
+Cascade note: dither (D7/D8) slips clean to v1.2.0 with full gate. Both roadmap tracks (wrap D1-D6, dither D7-D8) ship together in 1.2.0.
+
+## v1.2.0 "Tiles + Dither"
+
+Blue-noise dithering on `MeshGradient.rasterizeTo` — D7/D8 from the Tiles roadmap, slipped intact from v1.2.0 per the cascade rule. No peer bumps (engine v1.5.0 already floor from v1.2.0).
+
+Usage:
+```
+mesh.rasterizeTo(buf, W, H, { dither: true });
+mesh.rasterizeTo(buf, W, H, { dither: true, interpolation: 'cubic' });
+mesh.rasterizeTo(buf, W, H, { dither: true /* + wrap */ });
+```
+
+Semantics:
+- Delegates to `@zakkster/lite-color-engine >= 1.5.0`'s `packOklchBufferToUint32Dithered` + `getBlueNoise64`. Tile is a shared `Uint8Array(4096)` (64×64), decoded once from a base64 blob at first use.
+- Per-pixel: `noise01 = (tile[((y & 63) << 6) | (x & 63)] + 0.5) / 256` — pure bit ops, torus wrap via mask. Same noise01 shared across R/G/B (no chroma speckle). Alpha undithered.
+- Contract: `noise01 = 0.5` reproduces the plain packer exactly. Consequence: dither adds at most ±1 per-channel deviation vs undithered.
+- Branch resolved ONCE per rasterizeTo call — two loop bodies. `dither: false` (or absent) walks the exact v1.2.0 code path, byte-identical output.
+- Not on `rasterizeDeformedTo` (v1.3 ghost-quad work).
+
+New export: `packOklchSingleDithered(l, c, h, alpha, noise01)` — scalar-arg wrapper reusing the same Float32Array(3) scratch as `packOklchSingle`.
+
+Empirical dither overhead (5×5 smooth, 256²): 2.1M → 1.6M px/s, ~24%. Recorded in bench.
+
+Total tests: 269/269 (218 v1.1.0 + 31 wrap + 3 wrap-alloc + 15 dither + 2 dither-alloc). Byte-parity gate on the v1.1.0 tests still holds unmodified.
