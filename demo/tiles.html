@@ -1,0 +1,1867 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>lite-gradient-studio v1.2 · Tiles</title>
+    <style>
+        :root {
+            /* Phosphor tokens — hex fallback first, oklch when supported */
+            --bg: #0a0f0a;
+            --bg: oklch(0.13 0.02 145);
+            --stage: #04080a;
+            --stage: oklch(0.09 0.015 190);
+            --fg: #7dff9b;
+            --fg: oklch(0.86 0.16 145);
+            --dim: #3a5f43;
+            --dim: oklch(0.44 0.075 145);
+            --mid: #5a8a63;
+            --mid: oklch(0.60 0.11 145);
+            --warn: #ff9d5c;
+            --warn: oklch(0.75 0.18 55);
+            --seam: #ff5c6a;
+            --seam: oklch(0.72 0.22 25);
+            --border: #1a2a20;
+            --border: oklch(0.24 0.045 145);
+            --gridln: #101a13;
+            --gridln: oklch(0.17 0.02 145);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Roboto Mono", monospace;
+            background: var(--bg);
+            background-image: repeating-linear-gradient(0deg, transparent 0, transparent calc(2rem - 1px), var(--gridln) calc(2rem - 1px), var(--gridln) 2rem),
+            repeating-linear-gradient(90deg, transparent 0, transparent calc(2rem - 1px), var(--gridln) calc(2rem - 1px), var(--gridln) 2rem);
+            color: var(--fg);
+            min-height: 100dvh;
+            padding: 1rem;
+            font-size: 0.875rem;
+            line-height: 1.4;
+        }
+
+        header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        header h1 {
+            font-size: 1rem;
+            font-weight: normal;
+            color: var(--fg);
+            letter-spacing: 0.1em;
+        }
+
+        header h1 span {
+            color: var(--dim);
+        }
+
+        header .rel {
+            color: var(--mid);
+            font-size: 0.75rem;
+        }
+
+        nav#tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav#tabs button {
+            background: transparent;
+            color: var(--dim);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            font-family: inherit;
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            letter-spacing: 0.05em;
+            transition: color 0.1s linear;
+        }
+
+        nav#tabs button.on {
+            color: var(--fg);
+            background: var(--stage);
+            border-color: var(--fg);
+            position: relative;
+            top: 1px;
+        }
+
+        @media (hover: hover) {
+            nav#tabs button:hover:not(.on) {
+                color: var(--mid);
+            }
+        }
+
+        section[data-scene] {
+            display: none;
+        }
+
+        section[data-scene].on {
+            display: grid;
+            grid-template-columns: 1fr min(20rem, 100%);
+            gap: 1rem;
+        }
+
+        @media (max-width: 60rem) {
+            section[data-scene].on {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .stage {
+            background: var(--stage);
+            border: 1px solid var(--border);
+            padding: 0.5rem;
+            min-height: 24rem;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .stage canvas {
+            display: block;
+            max-width: 100%;
+            height: auto;
+            /* `touch-action: none` was set on EVERY canvas here. There are nine of them, and
+               seven have no drag affordance at all — scenes 02/03 only track hover for the
+               loupe, scene 04 takes no input. On a phone, where the stage fills most of the
+               viewport, a canvas with `touch-action: none` swallows the scroll gesture and
+               the page cannot be scrolled AT ALL. Hand vertical panning and pinch-zoom back
+               to the browser by default; opt individual canvases out below. */
+            touch-action: pan-y pinch-zoom;
+            image-rendering: crisp-edges;
+        }
+
+        /* Scene 01 is the only canvas you actually drag. `pan-y` keeps the vertical swipe
+           with the browser (page scroll) while horizontal drags still reach the pointer
+           handlers; a mouse is unaffected by touch-action, so desktop keeps full 2-D pan. */
+        #c1 {
+            touch-action: pan-y;
+        }
+
+        #loupe {
+            position: absolute;
+            pointer-events: none;
+            border: 1px solid var(--fg);
+            background: #000;
+            image-rendering: pixelated;
+            display: none;
+            z-index: 2;
+        }
+
+        .stage.loupe-live #loupe {
+            display: block;
+        }
+
+        .panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            border: 1px solid var(--border);
+            padding: 1rem;
+            background: color-mix(in oklch, var(--stage), transparent 30%);
+        }
+
+        .panel h3 {
+            font-size: 0.75rem;
+            font-weight: normal;
+            letter-spacing: 0.1em;
+            color: var(--dim);
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.35rem;
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.35rem;
+        }
+
+        .field label {
+            font-size: 0.7rem;
+            color: var(--dim);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .row {
+            display: flex;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .row button, .row select {
+            background: transparent;
+            color: var(--dim);
+            border: 1px solid var(--border);
+            font-family: inherit;
+            font-size: 0.8rem;
+            padding: 0.4rem 0.7rem;
+            cursor: pointer;
+            letter-spacing: 0.03em;
+            transition: color 0.1s linear, border-color 0.1s linear;
+        }
+
+        .row button.on {
+            color: var(--fg);
+            border-color: var(--fg);
+            background: color-mix(in oklch, var(--fg), transparent 92%);
+        }
+
+        @media (hover: hover) {
+            .row button:hover:not(.on) {
+                color: var(--mid);
+                border-color: var(--mid);
+            }
+        }
+
+        /* The ratio is a number. This turns it into the point. */
+        .verdict {
+            margin: 0.5rem 0 0;
+            padding: 0.4rem 0.55rem;
+            border-left: 2px solid currentColor;
+            font-size: 0.72rem;
+            line-height: 1.45;
+        }
+
+        .verdict.pass {
+            color: var(--ok, #6ee7a8);
+        }
+
+        .verdict.fail {
+            color: var(--warn, #f2a35e);
+        }
+
+        .telemetry {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.35rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .telemetry .k {
+            color: var(--dim);
+        }
+
+        .telemetry .v {
+            color: var(--fg);
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .telemetry .v.warn {
+            color: var(--warn);
+        }
+
+        .telemetry .v.seam {
+            color: var(--seam);
+        }
+
+        .telemetry .v.ok {
+            color: var(--fg);
+        }
+
+        #trace {
+            width: 100%;
+            display: block;
+            background: #000;
+            border: 1px solid var(--border);
+            image-rendering: crisp-edges;
+        }
+
+        .hint {
+            font-size: 0.7rem;
+            color: var(--dim);
+            line-height: 1.5;
+            border-left: 2px solid var(--border);
+            padding-left: 0.5rem;
+        }
+
+        /* Scene 03 */
+        .split-divider {
+            position: absolute;
+            top: 0.5rem;
+            bottom: 0.5rem;
+            width: 2px;
+            background: var(--fg);
+            box-shadow: 0 0 6px color-mix(in oklch, var(--fg), transparent 30%);
+            cursor: ew-resize;
+            /* The divider only ever moves in X, so hand Y back to the page. */
+            touch-action: pan-y;
+            z-index: 2;
+        }
+
+        .split-divider::before,
+        .split-divider::after {
+            content: '';
+            position: absolute;
+            left: -0.4rem;
+            right: -0.4rem;
+            height: 1rem;
+            background: var(--fg);
+        }
+
+        .split-divider::before {
+            top: 50%;
+            transform: translateY(-50%);
+            border-radius: 2px;
+        }
+
+        .side-label {
+            font-size: 0.7rem;
+            letter-spacing: 0.03em;
+        }
+
+        .side-label.off {
+            color: var(--dim);
+            flex: 1;
+        }
+
+        .side-label.on {
+            color: var(--fg);
+            flex: 1;
+            text-align: right;
+        }
+
+        #noiseSwatch {
+            display: block;
+            image-rendering: pixelated;
+            border: 1px solid var(--border);
+            background: #000;
+            width: 100%;
+            max-width: 128px;
+            height: auto;
+        }
+
+        #loupe3 {
+            position: absolute;
+            pointer-events: none;
+            border: 1px solid var(--fg);
+            background: #000;
+            image-rendering: pixelated;
+            display: none;
+            z-index: 3;
+        }
+
+        .stage.loupe-live #loupe3 {
+            display: block;
+        }
+
+        /* Scene 04 */
+        .ring-gauge {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            border: 1px solid var(--border);
+            background: color-mix(in oklch, #000, transparent 40%);
+            z-index: 2;
+        }
+
+        #cssOut {
+            background: #000;
+            color: var(--fg);
+            border: 1px solid var(--border);
+            font-family: inherit;
+            font-size: 0.72rem;
+            padding: 0.5rem;
+            line-height: 1.4;
+            resize: vertical;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>lite-gradient-studio <span>·</span> v1.2 <span>·</span> tiles</h1>
+    <span class="rel">wrap + dither</span>
+</header>
+
+<nav id="tabs">
+    <button data-tab="s1" class="on">01 · Infinite Wallpaper</button>
+    <button data-tab="s2">02 · Seam Lab</button>
+    <button data-tab="s3">03 · Banding Killer</button>
+    <button data-tab="s4">04 · Hue Wheel</button>
+</nav>
+
+<!-- ═══════════════════ Scene 01: Infinite Wallpaper ═══════════════════ -->
+<section data-scene="s1" class="on">
+    <div class="stage" id="s1stage">
+        <canvas id="c1" width="720" height="480"></canvas>
+    </div>
+    <div class="panel">
+        <h3>Wrap</h3>
+        <div class="row">
+            <button id="wx" class="on">wrapX</button>
+            <button id="wy" class="on">wrapY</button>
+        </div>
+        <p class="hint">Turn either off to expose seams. The <em>money shot</em>.</p>
+
+        <div class="field">
+            <label>Interpolation</label>
+            <div class="row" id="s1-interp">
+                <button data-interp="bilinear">bilinear</button>
+                <button data-interp="smooth" class="on">smooth</button>
+                <button data-interp="cubic">cubic</button>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Tile resolution</label>
+            <div class="row" id="s1-res">
+                <button data-res="128">128</button>
+                <button data-res="256" class="on">256</button>
+                <button data-res="512">512</button>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Palette</label>
+            <div class="row">
+                <button id="randomize">Randomize</button>
+                <button id="mono">Mono</button>
+                <button id="dither1">Dither</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <button id="grid">Grid overlay</button>
+            <button id="drift" class="on">Auto-drift</button>
+        </div>
+        <p class="hint">Drag the canvas to pan. Field scrolls forever — pan offset uses `%` on the tile size.</p>
+
+        <h3>Telemetry</h3>
+        <div class="telemetry">
+            <span class="k">FPS</span> <span class="v" id="t-fps">—</span>
+            <span class="k">Bake (last)</span> <span class="v" id="t-bake">—</span>
+            <span class="k">Tiles / frame</span> <span class="v" id="t-tiles">—</span>
+            <span class="k">Tile res</span> <span class="v" id="t-res">—</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══════════════════ Scene 02: Seam Lab ═══════════════════ -->
+<section data-scene="s2">
+    <div class="stage" id="s2stage">
+        <canvas id="c2" width="720" height="480"></canvas>
+        <canvas id="loupe" width="160" height="160"></canvas>
+    </div>
+    <div class="panel">
+        <h3>Comparison</h3>
+        <div class="row">
+            <button id="wx2" class="on">wrapX</button>
+        </div>
+        <p class="hint">Toggle wrap. Watch the trace flatline.</p>
+
+        <div class="field">
+            <label>Interpolation</label>
+            <div class="row" id="s2-interp">
+                <button data-interp2="bilinear">bilinear</button>
+                <button data-interp2="smooth">smooth</button>
+                <button data-interp2="cubic" class="on">cubic</button>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Loupe</label>
+            <div class="row">
+                <button id="loupe-toggle" class="on">Follow pointer</button>
+            </div>
+        </div>
+
+        <h3>Seam analysis (ΔE_OK)</h3>
+        <div class="telemetry">
+            <span class="k">SEAM Δ</span> <span class="v seam" id="s-seam">—</span>
+            <span class="k">INTERIOR Δ</span> <span class="v" id="s-inter">—</span>
+            <span class="k">Ratio (S/I)</span> <span class="v" id="s-ratio">—</span>
+        </div>
+        <p class="verdict" id="s-verdict">—</p>
+        <p class="hint">Ratio ≈ 1: seamless. Ratio ≫ 1: broken seam.</p>
+
+        <h3>Per-row |Δ| trace</h3>
+        <canvas id="trace" width="256" height="80"></canvas>
+        <p class="hint">Sparkline redraws on rebake only (never per frame).</p>
+    </div>
+</section>
+
+<!-- ═══════════════════ Scene 03: Banding Killer ═══════════════════ -->
+<section data-scene="s3">
+    <div class="stage" id="s3stage">
+        <canvas id="c3" width="720" height="480"></canvas>
+        <canvas id="loupe3" width="160" height="160"></canvas>
+        <div id="divider" class="split-divider"></div>
+    </div>
+    <div class="panel">
+        <h3>Split view</h3>
+        <div class="row">
+            <span class="side-label off">← dither: off</span>
+            <span class="side-label on">dither: on →</span>
+        </div>
+        <p class="hint">Drag the vertical divider. Left half is
+            undithered; right half uses blue-noise from the engine.</p>
+
+        <div class="field">
+            <label>Palette</label>
+            <div class="row">
+                <button id="s3-shallow" class="on">Shallow ramp</button>
+                <button id="s3-warm">Warm</button>
+                <button id="s3-cool">Cool</button>
+            </div>
+        </div>
+
+        <div class="row">
+            <button id="posterize">5-bit posterize</button>
+            <button id="loupe-toggle3" class="on">Loupe</button>
+        </div>
+        <p class="hint">Posterize to expose the effect on
+            good panels. Loupe follows the pointer.</p>
+
+        <h3>Blue-noise tile (64×64)</h3>
+        <canvas id="noiseSwatch" width="128" height="128"
+                title="engine's shared void-and-cluster tile"></canvas>
+
+        <h3>Telemetry</h3>
+        <div class="telemetry">
+            <span class="k">Raster off</span> <span class="v" id="t-off">—</span>
+            <span class="k">Raster on</span> <span class="v" id="t-on">—</span>
+            <span class="k">Overhead</span> <span class="v" id="t-over">—</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══════════════════ Scene 04: Hue Wheel ═══════════════════ -->
+<section data-scene="s4">
+    <div class="stage" id="s4stage">
+        <canvas id="c4" width="720" height="480"></canvas>
+        <canvas id="ringGauge" width="80" height="80" class="ring-gauge"></canvas>
+    </div>
+    <div class="panel">
+        <h3>Precomputed angle field</h3>
+        <p class="hint">Per-frame loop is <code>sampleColorLUTWrapped(lut,
+            field[i] + phase)</code> — no trig, no allocations. Phase
+            accumulates raw; the wrapped sampler handles the mod.</p>
+
+        <div class="field">
+            <label>Palette</label>
+            <div class="row" id="s4-pal">
+                <button data-pal="rainbow" class="on">Rainbow</button>
+                <button data-pal="dusk">Dusk</button>
+                <button data-pal="candy">Candy</button>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>LUT resolution</label>
+            <div class="row" id="s4-res">
+                <button data-lres="64">64</button>
+                <button data-lres="128">128</button>
+                <button data-lres="256" class="on">256</button>
+                <button data-lres="512">512</button>
+            </div>
+        </div>
+
+        <div class="field">
+            <label>Rotation</label>
+            <div class="row">
+                <button id="s4-play" class="on">Playing</button>
+                <button id="s4-reverse">Reverse</button>
+            </div>
+        </div>
+
+        <h3>Seamless CSS output</h3>
+        <textarea id="cssOut" readonly rows="4"></textarea>
+        <div class="row">
+            <button id="cssCopy">Copy CSS</button>
+        </div>
+
+        <h3>Telemetry</h3>
+        <div class="telemetry">
+            <span class="k">Fill</span> <span class="v" id="t-fill">—</span>
+            <span class="k">LUT res</span> <span class="v" id="t-lres">—</span>
+            <span class="k">Phase</span> <span class="v" id="t-phase">—</span>
+        </div>
+    </div>
+</section>
+
+<script type="importmap">
+{ "imports": {
+    "@zakkster/lite-gradient-studio":            "../src/index.js",
+    "@zakkster/lite-color":                      "https://esm.sh/@zakkster/lite-color@1.0.6",
+    "@zakkster/lite-color-engine":               "https://esm.sh/@zakkster/lite-color-engine@1.5.0",
+    "@zakkster/lite-gradient":                   "https://esm.sh/@zakkster/lite-gradient@1.2.0",
+    "@zakkster/lite-color-lerp":                 "https://esm.sh/@zakkster/lite-color-lerp@1.1.0"
+} }
+
+</script>
+
+<script type="module">
+    // ═══════════════════════════════════════════════════════════════════════════
+    //  Tiles demo — Scenes 01 + 02.  Flat module code, no IIFEs, no scope blocks.
+    //  Conventions applied verbatim:
+    //   - $-prefixed DOM refs cached at module init
+    //   - Zero allocations on frame loops / pointer handlers / rebakes-per-frame
+    //   - Pre-allocated Uint32Array / Uint8ClampedArray for the tile
+    //   - Pointer events (pointerdown/move/up/CANCEL); touch-action: pan-y pinch-zoom so
+    //     the page stays scrollable on touch — only #c1 and the divider opt down to pan-y
+    //   - Telemetry textContent throttled via frame-counter mask (~7.5 Hz at 60fps)
+    //   - No toFixed / toLocaleString in tight loops (only in throttled telemetry)
+    //   - Binary ops for hot arithmetic (`n | 0`, `& mask`, `>>>`)
+    //   - UI initial button state read from JS state at boot (never hardcoded twice)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    import {MeshGradient} from '@zakkster/lite-gradient-studio';
+    import {deltaEOK, getBlueNoise64} from '@zakkster/lite-color-engine';
+    import {bakeGradientLUTRGBA, sampleColorLUTWrapped} from '@zakkster/lite-color-lerp';
+
+    const TAU = Math.PI * 2;
+    const TELEMETRY_MASK = 7;             // update every 8th frame  ≈ 7.5 Hz
+    const AUTO_DRIFT_PX_S = 24;            // pixels per second on the money-shot autoplay
+
+    // ─── DOM refs (cache once) ──────────────────────────────────────────────────
+
+    // Tab nav
+    const $tabs = document.getElementById('tabs');
+    const $sections = document.querySelectorAll('section[data-scene]');
+
+    // Scene 01
+    const $c1 = document.getElementById('c1');
+    const $c1ctx = $c1.getContext('2d', {alpha: false});
+    const $s1stage = document.getElementById('s1stage');
+    const $wx = document.getElementById('wx');
+    const $wy = document.getElementById('wy');
+    const $s1interp = document.getElementById('s1-interp');
+    const $s1res = document.getElementById('s1-res');
+    const $randomize = document.getElementById('randomize');
+    const $mono = document.getElementById('mono');
+    const $dither1 = document.getElementById('dither1');
+    const $grid = document.getElementById('grid');
+    const $drift = document.getElementById('drift');
+    const $tFps = document.getElementById('t-fps');
+    const $tBake = document.getElementById('t-bake');
+    const $tTiles = document.getElementById('t-tiles');
+    const $tRes = document.getElementById('t-res');
+
+    // Scene 02
+    const $c2 = document.getElementById('c2');
+    const $c2ctx = $c2.getContext('2d', {alpha: false});
+    const $s2stage = document.getElementById('s2stage');
+    const $loupe = document.getElementById('loupe');
+    const $loupeCtx = $loupe.getContext('2d');
+    const $wx2 = document.getElementById('wx2');
+    const $s2interp = document.getElementById('s2-interp');
+    const $loupeTog = document.getElementById('loupe-toggle');
+    const $sSeam = document.getElementById('s-seam');
+    const $sVerdict = document.getElementById('s-verdict');
+    const $sInter = document.getElementById('s-inter');
+    const $sRatio = document.getElementById('s-ratio');
+    const $trace = document.getElementById('trace');
+    const $traceCtx = $trace.getContext('2d');
+
+    // Scene 03
+    const $c3 = document.getElementById('c3');
+    const $c3ctx = $c3.getContext('2d', {alpha: false});
+    const $s3stage = document.getElementById('s3stage');
+    const $divider = document.getElementById('divider');
+    const $loupe3 = document.getElementById('loupe3');
+    const $loupe3Ctx = $loupe3.getContext('2d');
+    const $s3shallow = document.getElementById('s3-shallow');
+    const $s3warm = document.getElementById('s3-warm');
+    const $s3cool = document.getElementById('s3-cool');
+    const $posterize = document.getElementById('posterize');
+    const $loupeTog3 = document.getElementById('loupe-toggle3');
+    const $noiseSwatch = document.getElementById('noiseSwatch');
+    const $noiseCtx = $noiseSwatch.getContext('2d');
+    const $tOff = document.getElementById('t-off');
+    const $tOn = document.getElementById('t-on');
+    const $tOver = document.getElementById('t-over');
+
+    // Scene 04
+    const $c4 = document.getElementById('c4');
+    const $c4ctx = $c4.getContext('2d', {alpha: false});
+    const $s4pal = document.getElementById('s4-pal');
+    const $s4res = document.getElementById('s4-res');
+    const $s4play = document.getElementById('s4-play');
+    const $s4reverse = document.getElementById('s4-reverse');
+    const $ringGauge = document.getElementById('ringGauge');
+    const $ringCtx = $ringGauge.getContext('2d');
+    const $cssOut = document.getElementById('cssOut');
+    const $cssCopy = document.getElementById('cssCopy');
+    const $tFill = document.getElementById('t-fill');
+    const $tLres = document.getElementById('t-lres');
+    const $tPhase = document.getElementById('t-phase');
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Scene 01 — Infinite Wallpaper
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // State
+    let s1_wrapX = true;
+    let s1_wrapY = true;
+    let s1_interp = 'smooth';
+    let s1_res = 256;
+    let s1_palette = 'default';
+    let s1_dither = false;
+    let s1_grid = false;
+    let s1_drift = true;
+
+    // Baked tile (offscreen). Uint32Array aliased to Uint8ClampedArray so the
+    // ImageData constructor can wrap it in place — one buffer, two views, zero
+    // per-frame copies. `putImageData` writes it to the offscreen canvas; the
+    // visible canvas fills itself via tiled `drawImage(tileCanvas, ...)`.
+    const s1_tile = document.createElement('canvas');
+    const s1_tileCtx = s1_tile.getContext('2d');
+    let s1_tileU32 = null;
+    let s1_tileImg = null;
+    let s1_lastBakeMs = 0;
+    let s1_lastBakeTiles = 0;
+
+    // Pan offset (float; wraps via % at draw time)
+    let s1_panX = 0;
+    let s1_panY = 0;
+
+    // Pointer drag state
+    let s1_dragging = false;
+    let s1_dragLX = 0;
+    let s1_dragLY = 0;
+
+    // FPS accumulator
+    let s1_frames = 0;
+    let s1_fpsT0 = performance.now();
+    let s1_fpsHz = 0;
+
+    // Bake-dirty flag
+    let s1_dirty = true;
+
+    // Palette generator seeds. Each palette is 4×4 = 16 OKLCH stops.
+    // Pre-allocated seed offsets so `Randomize` doesn't allocate a fresh array
+    // (though it's a setup event, not per-frame — still cheap).
+    const s1_stopsBuf = new Array(16);
+    for (let i = 0; i < 16; i++) s1_stopsBuf[i] = {l: 0, c: 0, h: 0, a: 1};
+
+    function s1_seedDefault() {
+        // Studio's default aurora — but populated explicitly so `Randomize` can
+        // reset to it. Uses period spacing (i / cols) semantics implicitly via
+        // the wrap-aware default color path in the constructor.
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 4; c++) {
+                const cT = c / 4;
+                const rT = r / 4;
+                const s = s1_stopsBuf[r * 4 + c];
+                s.l = 0.55 + 0.15 * Math.cos(2 * Math.PI * rT);
+                s.c = 0.15 + 0.10 * Math.abs(Math.sin(Math.PI * cT)) * Math.abs(Math.sin(Math.PI * rT));
+                s.h = (240 + 360 * cT + 30 * Math.sin(2 * Math.PI * rT)) % 360;
+                s.a = 1;
+            }
+        }
+    }
+
+    function s1_seedRandom() {
+        // Random hue anchors around the wheel; low-ish chroma so the mesh
+        // doesn't clip. Deterministic-ish via a rolling counter — every click
+        // gives a different palette but the field is well-conditioned.
+        for (let i = 0; i < 16; i++) {
+            const s = s1_stopsBuf[i];
+            s.l = 0.35 + Math.random() * 0.45;
+            s.c = 0.08 + Math.random() * 0.15;
+            s.h = Math.random() * 360;
+            s.a = 1;
+        }
+    }
+
+    function s1_seedMono() {
+        // Monochrome preset — pick a random hue anchor, tint L across x, y.
+        const H = Math.random() * 360;
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 4; c++) {
+                const s = s1_stopsBuf[r * 4 + c];
+                s.l = 0.30 + (r / 3) * 0.45 + (c / 3) * 0.10 * (r & 1 ? -1 : 1);
+                if (s.l < 0.15) s.l = 0.15; else if (s.l > 0.90) s.l = 0.90;
+                s.c = 0.03 + Math.random() * 0.02;
+                s.h = H;
+                s.a = 1;
+            }
+        }
+    }
+
+    s1_seedDefault();
+
+    function s1_rebake() {
+        const res = s1_res | 0;
+        // Grow the tile buffer to `res × res` uint32 pixels only when needed.
+        // This is the ONE place we allocate — on control change, not per frame.
+        if (s1_tileU32 === null || s1_tileU32.length !== res * res) {
+            s1_tile.width = res;
+            s1_tile.height = res;
+            s1_tileU32 = new Uint32Array(res * res);
+            s1_tileImg = new ImageData(new Uint8ClampedArray(s1_tileU32.buffer), res, res);
+        }
+        const mesh = new MeshGradient(4, 4, s1_stopsBuf, {wrapX: s1_wrapX, wrapY: s1_wrapY});
+        const t0 = performance.now();
+        mesh.rasterizeTo(s1_tileU32, res, res, {
+            interpolation: s1_interp,
+            dither: s1_dither,
+        });
+        s1_tileCtx.putImageData(s1_tileImg, 0, 0);
+        s1_lastBakeMs = performance.now() - t0;
+        s1_dirty = false;
+    }
+
+    function s1_draw() {
+        const W = $c1.width, H = $c1.height;
+        const R = s1_res | 0;
+        // Base pan mod R — every drawImage lands correctly after this.
+        const px = ((s1_panX % R) + R) % R;
+        const py = ((s1_panY % R) + R) % R;
+
+        // Compute tile grid — start offsets negative so the visible viewport is
+        // covered even when the pan is mid-tile.
+        const startX = -px;
+        const startY = -py;
+        // Cheap tile count (integer math; no ceil call).
+        let tiles = 0;
+        for (let y = startY; y < H; y += R) {
+            for (let x = startX; x < W; x += R) {
+                $c1ctx.drawImage(s1_tile, x, y);
+                tiles++;
+            }
+        }
+        s1_lastBakeTiles = tiles;
+
+        // Optional grid overlay — one path, drawn last.
+        if (s1_grid) {
+            $c1ctx.strokeStyle = 'rgba(125, 255, 155, 0.35)';
+            $c1ctx.lineWidth = 1;
+            $c1ctx.beginPath();
+            for (let x = startX; x <= W; x += R) {
+                $c1ctx.moveTo(x + 0.5, 0);
+                $c1ctx.lineTo(x + 0.5, H);
+            }
+            for (let y = startY; y <= H; y += R) {
+                $c1ctx.moveTo(0, y + 0.5);
+                $c1ctx.lineTo(W, y + 0.5);
+            }
+            $c1ctx.stroke();
+        }
+    }
+
+    // ─── Scene 01 event wiring ─────────────────────────────────────────────────
+
+    $wx.addEventListener('click', () => {
+        s1_wrapX = !s1_wrapX;
+        $wx.classList.toggle('on', s1_wrapX);
+        s1_dirty = true;
+    });
+    $wy.addEventListener('click', () => {
+        s1_wrapY = !s1_wrapY;
+        $wy.classList.toggle('on', s1_wrapY);
+        s1_dirty = true;
+    });
+    $s1interp.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-interp]');
+        if (!btn) return;
+        s1_interp = btn.dataset.interp;
+        for (const b of $s1interp.children) b.classList.toggle('on', b === btn);
+        s1_dirty = true;
+    });
+    $s1res.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-res]');
+        if (!btn) return;
+        s1_res = +btn.dataset.res;
+        for (const b of $s1res.children) b.classList.toggle('on', b === btn);
+        s1_dirty = true;
+    });
+    $randomize.addEventListener('click', () => {
+        s1_palette = 'random';
+        s1_seedRandom();
+        s1_dirty = true;
+    });
+    $mono.addEventListener('click', () => {
+        s1_palette = 'mono';
+        s1_seedMono();
+        s1_dirty = true;
+    });
+    $dither1.addEventListener('click', () => {
+        s1_dither = !s1_dither;
+        $dither1.classList.toggle('on', s1_dither);
+        s1_dirty = true;
+    });
+    $grid.addEventListener('click', () => {
+        s1_grid = !s1_grid;
+        $grid.classList.toggle('on', s1_grid);
+    });
+    $drift.addEventListener('click', () => {
+        s1_drift = !s1_drift;
+        $drift.classList.toggle('on', s1_drift);
+    });
+
+    // Pointer drag on the stage
+    $c1.addEventListener('pointerdown', (e) => {
+        s1_dragging = true;
+        s1_dragLX = e.clientX;
+        s1_dragLY = e.clientY;
+        $c1.setPointerCapture(e.pointerId);
+    });
+    $c1.addEventListener('pointermove', (e) => {
+        if (!s1_dragging) return;
+        s1_panX -= (e.clientX - s1_dragLX);
+        s1_panY -= (e.clientY - s1_dragLY);
+        s1_dragLX = e.clientX;
+        s1_dragLY = e.clientY;
+    });
+    // `pointerup` alone is not enough. With touch-action handing vertical panning back
+    // to the browser, the browser is ALLOWED to take a gesture over mid-drag — and when
+    // it does it fires `pointercancel`, NOT `pointerup`. Without this the flag stays true
+    // and the mesh keeps panning against a finger that has stopped talking to us.
+    // releasePointerCapture also throws NotFoundError if the capture is already gone,
+    // which it is after a cancel — hence the guard.
+    const s1_endDrag = (e) => {
+        s1_dragging = false;
+        if (e && $c1.hasPointerCapture && $c1.hasPointerCapture(e.pointerId)) {
+            $c1.releasePointerCapture(e.pointerId);
+        }
+    };
+    $c1.addEventListener('pointerup', s1_endDrag);
+    $c1.addEventListener('pointercancel', s1_endDrag);
+    $c1.addEventListener('lostpointercapture', () => {
+        s1_dragging = false;
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Scene 02 — Seam Lab
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    const S2_TILE_RES = 200;                   // tile size the 2×2 wall is built from
+    const S2_SAMPLES = S2_TILE_RES;           // one seam-Δ sample per pixel row
+    const S2_LOUPE_SZ = 160;
+    const S2_LOUPE_ZOOM = 6;
+
+    let s2_wrapX = true;
+    let s2_interp = 'cubic';
+    let s2_loupeLive = true;
+
+    // Pre-allocated per-row seam Δ trace and interior Δ trace.
+    const s2_seamRow = new Float64Array(S2_SAMPLES);
+    const s2_interRow = new Float64Array(S2_SAMPLES);
+
+    // Sampling scratches — the mesh's OKLCH `sampleAt` output. Fixed shape.
+    const s2_leftA = {l: 0, c: 0, h: 0, a: 1};
+    const s2_rightA = {l: 0, c: 0, h: 0, a: 1};
+    const s2_leftB = {l: 0, c: 0, h: 0, a: 1};
+    const s2_rightB = {l: 0, c: 0, h: 0, a: 1};
+
+    // deltaEOK takes (Float32Array, offset, Float32Array, offset). Two 3-slot
+    // scratches are enough — we recycle them for every seam/interior sample.
+    const s2_bufA = new Float32Array(3);
+    const s2_bufB = new Float32Array(3);
+
+    // Baked tile canvas (like Scene 01, but resolution fixed per session)
+    const s2_tile = document.createElement('canvas');
+    const s2_tileCtx = s2_tile.getContext('2d');
+    let s2_tileU32 = null;
+    let s2_tileImg = null;
+
+    let s2_seamMax = 0;
+    let s2_interMax = 0;
+
+    // Pointer state for loupe (Scene 02)
+    let s2_ptrX = 0;
+    let s2_ptrY = 0;
+    let s2_ptrIn = false;
+
+    // Fixed palette for Scene 02 — a chromatic mesh where seam breaks are visually
+    // unambiguous. Different hues at each corner make broken seams jump out.
+    const s2_stops = [
+        {l: 0.45, c: 0.16, h: 0},   // top-left,      red-ish
+        {l: 0.55, c: 0.14, h: 120},   // top-mid,       green-ish
+        {l: 0.65, c: 0.12, h: 240},   // top-right,     blue-ish
+        {l: 0.45, c: 0.14, h: 60},
+        {l: 0.55, c: 0.12, h: 180},
+        {l: 0.65, c: 0.10, h: 300},
+        {l: 0.35, c: 0.14, h: 200},
+        {l: 0.55, c: 0.15, h: 330},
+        {l: 0.60, c: 0.16, h: 40},
+    ];
+
+    let s2_dirty = true;
+    let s2_frames = 0;
+
+    function s2_rebake() {
+        const res = S2_TILE_RES;
+        if (s2_tileU32 === null) {
+            s2_tile.width = res;
+            s2_tile.height = res;
+            s2_tileU32 = new Uint32Array(res * res);
+            s2_tileImg = new ImageData(new Uint8ClampedArray(s2_tileU32.buffer), res, res);
+        }
+        const mesh = new MeshGradient(3, 3, s2_stops, {wrapX: s2_wrapX});
+        mesh.rasterizeTo(s2_tileU32, res, res, {interpolation: s2_interp});
+        s2_tileCtx.putImageData(s2_tileImg, 0, 0);
+
+        // Row-by-row seam Δ + interior Δ, in OKLCH via deltaEOK. That kernel
+        // takes (Float32Array, offset, Float32Array, offset) so we pack the
+        // sampleAt output objects into the two shared 3-slot scratches.
+        // Seam: sample at u = 1 - epsilon and u = 0 for the same v. On a wrapped
+        //       mesh these should be equal; on an unwrapped mesh they're the raw
+        //       last-column vs first-column disagreement.
+        // Interior: sample two adjacent u midway across the mesh at the same v.
+        //           Baseline for what "smooth interior" looks like.
+        const eps = 1 / res;
+        let sMax = 0, iMax = 0;
+        for (let y = 0; y < res; y++) {
+            const v = y / (res - 1);
+
+            // Seam
+            mesh.sampleAt(1 - eps, v, s2_leftA, s2_interp);
+            mesh.sampleAt(0, v, s2_rightA, s2_interp);
+            s2_bufA[0] = s2_leftA.l;
+            s2_bufA[1] = s2_leftA.c;
+            s2_bufA[2] = s2_leftA.h;
+            s2_bufB[0] = s2_rightA.l;
+            s2_bufB[1] = s2_rightA.c;
+            s2_bufB[2] = s2_rightA.h;
+            const dS = deltaEOK(s2_bufA, 0, s2_bufB, 0);
+            s2_seamRow[y] = dS;
+            if (dS > sMax) sMax = dS;
+
+            // Interior — same u-delta but centered around 0.5
+            mesh.sampleAt(0.5 - eps * 0.5, v, s2_leftB, s2_interp);
+            mesh.sampleAt(0.5 + eps * 0.5, v, s2_rightB, s2_interp);
+            s2_bufA[0] = s2_leftB.l;
+            s2_bufA[1] = s2_leftB.c;
+            s2_bufA[2] = s2_leftB.h;
+            s2_bufB[0] = s2_rightB.l;
+            s2_bufB[1] = s2_rightB.c;
+            s2_bufB[2] = s2_rightB.h;
+            const dI = deltaEOK(s2_bufA, 0, s2_bufB, 0);
+            s2_interRow[y] = dI;
+            if (dI > iMax) iMax = dI;
+        }
+        s2_seamMax = sMax;
+        s2_interMax = iMax;
+
+        // Draw the 2×2 tiled wall to the visible canvas — fixed layout, tile
+        // parked so the vertical seam sits at canvas center.
+        const cw = $c2.width, ch = $c2.height;
+        $c2ctx.fillStyle = '#000';
+        $c2ctx.fillRect(0, 0, cw, ch);
+        // Two-across, two-down; seam falls between them at x = cw / 2.
+        const tw = res, th = res;
+        const ox = ((cw / 2) - tw) | 0;
+        const oy = ((ch / 2) - th) | 0;
+        $c2ctx.drawImage(s2_tile, ox, oy);
+        $c2ctx.drawImage(s2_tile, ox + tw, oy);
+        $c2ctx.drawImage(s2_tile, ox, oy + th);
+        $c2ctx.drawImage(s2_tile, ox + tw, oy + th);
+
+        // Vertical seam marker — one hairline down the center. Red when the
+        // seam is measurable, dim otherwise.
+        $c2ctx.strokeStyle = sMax > 0.005 ? 'rgba(255,92,106,0.6)' : 'rgba(90,138,99,0.3)';
+        $c2ctx.beginPath();
+        $c2ctx.moveTo((cw / 2) + 0.5, 0);
+        $c2ctx.lineTo((cw / 2) + 0.5, ch);
+        $c2ctx.stroke();
+
+        // Redraw trace (rebake-only work, never per frame).
+        s2_drawTrace();
+
+        s2_dirty = false;
+    }
+
+    function s2_drawTrace() {
+        const w = $trace.width, h = $trace.height;
+        $traceCtx.fillStyle = '#000';
+        $traceCtx.fillRect(0, 0, w, h);
+
+        // Grid: three horizontal lines at 0.25, 0.5, 0.75 of the trace height.
+        $traceCtx.strokeStyle = 'rgba(58,95,67,0.6)';
+        $traceCtx.beginPath();
+        for (let j = 1; j < 4; j++) {
+            const y = (j * h / 4) | 0;
+            $traceCtx.moveTo(0, y + 0.5);
+            $traceCtx.lineTo(w, y + 0.5);
+        }
+        $traceCtx.stroke();
+
+        // Scale: use max of seam and interior maxes so both traces are visible.
+        // Guard against zero — flatline looks best pinned to the bottom.
+        const scaleMax = Math.max(s2_seamMax, s2_interMax, 0.001);
+        const N = S2_SAMPLES;
+
+        // Interior trace (fg dim)
+        $traceCtx.strokeStyle = 'rgba(90,138,99,0.9)';
+        $traceCtx.beginPath();
+        for (let i = 0; i < N; i++) {
+            const x = (i / (N - 1)) * (w - 1);
+            const y = h - 1 - (s2_interRow[i] / scaleMax) * (h - 4);
+            if (i === 0) $traceCtx.moveTo(x, y);
+            else $traceCtx.lineTo(x, y);
+        }
+        $traceCtx.stroke();
+
+        // Seam trace (seam red / phosphor fg depending on magnitude)
+        $traceCtx.strokeStyle = s2_seamMax > s2_interMax * 2
+            ? 'rgba(255,92,106,1)'
+            : 'rgba(125,255,155,0.95)';
+        $traceCtx.lineWidth = 1.25;
+        $traceCtx.beginPath();
+        for (let i = 0; i < N; i++) {
+            const x = (i / (N - 1)) * (w - 1);
+            const y = h - 1 - (s2_seamRow[i] / scaleMax) * (h - 4);
+            if (i === 0) $traceCtx.moveTo(x, y);
+            else $traceCtx.lineTo(x, y);
+        }
+        $traceCtx.stroke();
+        $traceCtx.lineWidth = 1;
+    }
+
+    function s2_drawLoupe() {
+        if (!s2_loupeLive || !s2_ptrIn) {
+            $s2stage.classList.remove('loupe-live');
+            return;
+        }
+        $s2stage.classList.add('loupe-live');
+
+        // Loupe positions: bottom-right of the pointer, clamped to stage.
+        const stageBox = $s2stage.getBoundingClientRect();
+        const cvBox = $c2.getBoundingClientRect();
+        let lx = s2_ptrX - stageBox.left + 12;
+        let ly = s2_ptrY - stageBox.top + 12;
+        if (lx + S2_LOUPE_SZ > stageBox.width - 4) lx = s2_ptrX - stageBox.left - S2_LOUPE_SZ - 12;
+        if (ly + S2_LOUPE_SZ > stageBox.height - 4) ly = s2_ptrY - stageBox.top - S2_LOUPE_SZ - 12;
+        if (lx < 4) lx = 4;
+        if (ly < 4) ly = 4;
+        $loupe.style.left = lx + 'px';
+        $loupe.style.top = ly + 'px';
+
+        // Source rect on $c2 (canvas coords), converted from CSS pixels.
+        const scaleX = $c2.width / cvBox.width;
+        const scaleY = $c2.height / cvBox.height;
+        const srcCx = (s2_ptrX - cvBox.left) * scaleX;
+        const srcCy = (s2_ptrY - cvBox.top) * scaleY;
+        const srcSize = S2_LOUPE_SZ / S2_LOUPE_ZOOM;
+        const srcX = (srcCx - srcSize / 2) | 0;
+        const srcY = (srcCy - srcSize / 2) | 0;
+
+        $loupeCtx.imageSmoothingEnabled = false;
+        $loupeCtx.fillStyle = '#000';
+        $loupeCtx.fillRect(0, 0, S2_LOUPE_SZ, S2_LOUPE_SZ);
+        $loupeCtx.drawImage($c2, srcX, srcY, srcSize, srcSize, 0, 0, S2_LOUPE_SZ, S2_LOUPE_SZ);
+
+        // Crosshair at center of the loupe — visual pointer anchor.
+        $loupeCtx.strokeStyle = 'rgba(125,255,155,0.35)';
+        $loupeCtx.beginPath();
+        $loupeCtx.moveTo(S2_LOUPE_SZ / 2 + 0.5, 0);
+        $loupeCtx.lineTo(S2_LOUPE_SZ / 2 + 0.5, S2_LOUPE_SZ);
+        $loupeCtx.moveTo(0, S2_LOUPE_SZ / 2 + 0.5);
+        $loupeCtx.lineTo(S2_LOUPE_SZ, S2_LOUPE_SZ / 2 + 0.5);
+        $loupeCtx.stroke();
+    }
+
+    // ─── Scene 02 event wiring ─────────────────────────────────────────────────
+
+    $wx2.addEventListener('click', () => {
+        s2_wrapX = !s2_wrapX;
+        $wx2.classList.toggle('on', s2_wrapX);
+        s2_dirty = true;
+    });
+    $s2interp.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-interp2]');
+        if (!btn) return;
+        s2_interp = btn.dataset.interp2;
+        for (const b of $s2interp.children) b.classList.toggle('on', b === btn);
+        s2_dirty = true;
+    });
+    $loupeTog.addEventListener('click', () => {
+        s2_loupeLive = !s2_loupeLive;
+        $loupeTog.classList.toggle('on', s2_loupeLive);
+        if (!s2_loupeLive) $s2stage.classList.remove('loupe-live');
+    });
+
+    $c2.addEventListener('pointerenter', () => {
+        s2_ptrIn = true;
+    });
+    $c2.addEventListener('pointerleave', () => {
+        s2_ptrIn = false;
+    });
+    $c2.addEventListener('pointermove', (e) => {
+        s2_ptrX = e.clientX;
+        s2_ptrY = e.clientY;
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Scene 03 — Banding Killer
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // State
+    let s3_palette = 'shallow';
+    let s3_posterize = false;
+    let s3_loupeLive = true;
+    let s3_dividerX = 0.5;              // fraction of canvas width; drag to move
+    let s3_dividerDragging = false;
+
+    // Pointer position for loupe (Scene 03)
+    let s3_ptrX = 0;
+    let s3_ptrY = 0;
+    let s3_ptrIn = false;
+
+    // Two offscreen tiles: undithered / dithered. Same mesh, same size — the ONLY
+    // difference is the `dither` flag on `rasterizeTo`. We overlay them via
+    // clipping regions on the visible canvas per frame; rebake only on control
+    // change.
+    const s3_tileRes = 256;
+    const s3_tileOff = document.createElement('canvas');
+    const s3_tileOn = document.createElement('canvas');
+    s3_tileOff.width = s3_tileOff.height = s3_tileRes;
+    s3_tileOn.width = s3_tileOn.height = s3_tileRes;
+    const s3_tileOffCtx = s3_tileOff.getContext('2d');
+    const s3_tileOnCtx = s3_tileOn.getContext('2d');
+    const s3_bufOff = new Uint32Array(s3_tileRes * s3_tileRes);
+    const s3_bufOn = new Uint32Array(s3_tileRes * s3_tileRes);
+    const s3_imgOff = new ImageData(new Uint8ClampedArray(s3_bufOff.buffer), s3_tileRes, s3_tileRes);
+    const s3_imgOn = new ImageData(new Uint8ClampedArray(s3_bufOn.buffer), s3_tileRes, s3_tileRes);
+
+    let s3_lastMsOff = 0;
+    let s3_lastMsOn = 0;
+    let s3_dirty = true;
+    let s3_frames = 0;
+
+    // Mesh stops per palette. Sixteen (4x4) OKLCH triplets. Shallow ramp is
+    // deliberately narrow-band on L and low on chroma — the worst-case banding
+    // scenario, where blue-noise dither wins visibly on any decent panel.
+    const s3_stopsShallow = [];
+    const s3_stopsWarm = [];
+    const s3_stopsCool = [];
+    for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+            const cT = c / 3, rT = r / 3;
+            // Shallow ramp — L in [0.42, 0.52], almost no chroma, one hue.
+            s3_stopsShallow.push({
+                l: 0.42 + rT * 0.10 + cT * 0.03,
+                c: 0.010,
+                h: 210,
+            });
+            // Warm — L in [0.35, 0.75], chroma to 0.06, hue in [30, 80].
+            s3_stopsWarm.push({
+                l: 0.35 + rT * 0.40 + cT * 0.05,
+                c: 0.04 + cT * 0.02,
+                h: 30 + rT * 50,
+            });
+            // Cool — L in [0.25, 0.60], hue in [200, 260].
+            s3_stopsCool.push({
+                l: 0.25 + rT * 0.35 + cT * 0.05,
+                c: 0.03 + rT * 0.03,
+                h: 200 + cT * 60,
+            });
+        }
+    }
+
+    function s3_stops() {
+        if (s3_palette === 'shallow') return s3_stopsShallow;
+        if (s3_palette === 'warm') return s3_stopsWarm;
+        return s3_stopsCool;
+    }
+
+    // Posterize: mask off the low 3 bits of R, G, B — 5 bits/channel = 32 levels
+    // per channel. Preserves alpha. In-place on the Uint32Array. Pure bit-op
+    // hot loop; zero-GC.
+    function s3_posterizeInPlace(buf) {
+        // 0xFFF8F8F8 = alpha 0xFF | B 0xF8 | G 0xF8 | R 0xF8 in LE-uint32.
+        const MASK = 0xFFF8F8F8 | 0;
+        for (let i = 0; i < buf.length; i++) buf[i] = buf[i] & MASK;
+    }
+
+    function s3_rebake() {
+        const res = s3_tileRes;
+        const stops = s3_stops();
+        const mesh = new MeshGradient(4, 4, stops);   // non-wrap: split is inside one tile
+
+        // Time the RASTER, not the raster plus posterize. Posterize is a constant added to
+        // both arms, so including it silently dilutes the dither overhead toward zero.
+        let t0 = performance.now();
+        mesh.rasterizeTo(s3_bufOff, res, res, {interpolation: 'smooth'});
+        s3_lastMsOff = performance.now() - t0;
+        if (s3_posterize) s3_posterizeInPlace(s3_bufOff);
+        s3_tileOffCtx.putImageData(s3_imgOff, 0, 0);
+
+        t0 = performance.now();
+        mesh.rasterizeTo(s3_bufOn, res, res, {interpolation: 'smooth', dither: true});
+        s3_lastMsOn = performance.now() - t0;
+        if (s3_posterize) s3_posterizeInPlace(s3_bufOn);
+        s3_tileOnCtx.putImageData(s3_imgOn, 0, 0);
+
+        s3_dirty = false;
+    }
+
+    // ── Dither overhead, measured honestly ──────────────────────────────────────
+    //
+    // The overhead % used to be derived from the two single-shot timings above: one cold
+    // call each, no warm-up, OFF always measured first so ON ran on warmer caches. Eight
+    // consecutive readings of that method, measured:
+    //
+    //     -19.8%  -9.4%  4.2%  5.3%  10.3%  5.8%  5.6%  7.0%
+    //
+    // A 30-point spread, and TWO of the eight are negative — the panel would sit there
+    // telling you dither is 20% FASTER than not dithering. And because s3 only rebakes on
+    // interaction, whichever garbage number came out last just stays on screen.
+    //
+    // The true figure is ~5.5%. So: warm up, alternate the order (ABBA cancels any drift
+    // or cache asymmetry), take a median, and spread the whole thing across frames so it
+    // never costs a hitch. The ratio is resolution-independent (measured: 5.7 / 5.5 / 5.7
+    // / 6.1% at 96 / 128 / 192 / 256), so bench small and report honestly.
+    const S3_BENCH_RES = 96;
+    const S3_BENCH_WARM = 8;
+    const S3_BENCH_PAIRS = 9;    // ABBA blocks -> 18 samples per arm
+
+    const s3_benchOff = new Uint32Array(S3_BENCH_RES * S3_BENCH_RES);
+    const s3_benchOn = new Uint32Array(S3_BENCH_RES * S3_BENCH_RES);
+    const s3_benchA = new Float64Array(S3_BENCH_PAIRS * 2);
+    const s3_benchB = new Float64Array(S3_BENCH_PAIRS * 2);
+    let s3_benchMesh = null;
+    let s3_benchWarm = S3_BENCH_WARM;
+    let s3_benchCount = 0;
+    let s3_overhead = null;   // null = still measuring
+
+    const s3_median = (arr, n) => {
+        // insertion sort into a copy is fine at n = 18, and it is off the frame path
+        const tmp = arr.slice(0, n);
+        tmp.sort((a, b) => a - b);
+        return n % 2 ? tmp[n >> 1] : (tmp[(n >> 1) - 1] + tmp[n >> 1]) * 0.5;
+    };
+
+    // One ABBA block per frame. At 96x96 that is ~4 rasters, and it stops entirely once
+    // the median is in — the steady-state frame cost of this is zero.
+    function s3_benchStep() {
+        if (s3_overhead !== null) return;
+        if (s3_benchMesh === null) s3_benchMesh = new MeshGradient(4, 4, s3_stopsShallow);
+        const m = s3_benchMesh, R = S3_BENCH_RES;
+        const off = () => m.rasterizeTo(s3_benchOff, R, R, {interpolation: 'smooth'});
+        const on = () => m.rasterizeTo(s3_benchOn, R, R, {interpolation: 'smooth', dither: true});
+
+        if (s3_benchWarm > 0) {
+            off();
+            on();
+            s3_benchWarm--;
+            return;
+        }
+
+        const i = s3_benchCount * 2;
+        let t = performance.now();
+        off();
+        s3_benchA[i] = performance.now() - t;
+        t = performance.now();
+        on();
+        s3_benchB[i] = performance.now() - t;
+        t = performance.now();
+        on();
+        s3_benchB[i + 1] = performance.now() - t;
+        t = performance.now();
+        off();
+        s3_benchA[i + 1] = performance.now() - t;
+        s3_benchCount++;
+
+        if (s3_benchCount >= S3_BENCH_PAIRS) {
+            const n = S3_BENCH_PAIRS * 2;
+            const a = s3_median(s3_benchA, n);
+            const b = s3_median(s3_benchB, n);
+            s3_overhead = a > 0 ? (b / a - 1) * 100 : 0;
+        }
+    }
+
+    function s3_draw() {
+        const W = $c3.width, H = $c3.height;
+        const R = s3_tileRes;
+        // Tile the canvas with each half, then use a clip-rect split.
+        // Cheaper alternative — paint the whole canvas from tileOff, then
+        // paint the right half from tileOn on top with a clip. Two passes.
+        // First pass: undithered background across the whole canvas.
+        for (let y = 0; y < H; y += R) {
+            for (let x = 0; x < W; x += R) $c3ctx.drawImage(s3_tileOff, x, y);
+        }
+        // Second pass: dithered overlay clipped to right of divider.
+        const dx = (s3_dividerX * W) | 0;
+        $c3ctx.save();
+        $c3ctx.beginPath();
+        $c3ctx.rect(dx, 0, W - dx, H);
+        $c3ctx.clip();
+        for (let y = 0; y < H; y += R) {
+            for (let x = 0; x < W; x += R) $c3ctx.drawImage(s3_tileOn, x, y);
+        }
+        $c3ctx.restore();
+    }
+
+    function s3_drawNoiseSwatch() {
+        const tile = getBlueNoise64();     // shared Uint8Array(4096)
+        const buf = new Uint32Array(64 * 64);
+        for (let i = 0; i < 4096; i++) {
+            const v = tile[i];
+            // Grayscale RGBA-LE: R=G=B=v, A=255. `(255<<24) | (v<<16) | (v<<8) | v`.
+            buf[i] = (0xff000000 | (v << 16) | (v << 8) | v) >>> 0;
+        }
+        const img = new ImageData(new Uint8ClampedArray(buf.buffer), 64, 64);
+        // Small 64×64 canvas render, then upscale via CSS `image-rendering: pixelated`.
+        $noiseSwatch.width = 64;
+        $noiseSwatch.height = 64;
+        $noiseCtx.putImageData(img, 0, 0);
+    }
+
+    s3_drawNoiseSwatch();
+
+    function s3_updateDividerPos() {
+        const box = $c3.getBoundingClientRect();
+        const stageBox = $s3stage.getBoundingClientRect();
+        const canvasLeft = box.left - stageBox.left;
+        const cssX = canvasLeft + s3_dividerX * box.width;
+        $divider.style.left = cssX + 'px';
+    }
+
+    function s3_drawLoupe() {
+        if (!s3_loupeLive || !s3_ptrIn) {
+            $s3stage.classList.remove('loupe-live');
+            return;
+        }
+        $s3stage.classList.add('loupe-live');
+
+        const stageBox = $s3stage.getBoundingClientRect();
+        const cvBox = $c3.getBoundingClientRect();
+        const LOUPE_SZ = 160;
+        const LOUPE_ZOOM = 8;
+        let lx = s3_ptrX - stageBox.left + 12;
+        let ly = s3_ptrY - stageBox.top + 12;
+        if (lx + LOUPE_SZ > stageBox.width - 4) lx = s3_ptrX - stageBox.left - LOUPE_SZ - 12;
+        if (ly + LOUPE_SZ > stageBox.height - 4) ly = s3_ptrY - stageBox.top - LOUPE_SZ - 12;
+        if (lx < 4) lx = 4;
+        if (ly < 4) ly = 4;
+        $loupe3.style.left = lx + 'px';
+        $loupe3.style.top = ly + 'px';
+
+        const scaleX = $c3.width / cvBox.width;
+        const scaleY = $c3.height / cvBox.height;
+        const srcCx = (s3_ptrX - cvBox.left) * scaleX;
+        const srcCy = (s3_ptrY - cvBox.top) * scaleY;
+        const srcSize = LOUPE_SZ / LOUPE_ZOOM;
+        const srcX = (srcCx - srcSize / 2) | 0;
+        const srcY = (srcCy - srcSize / 2) | 0;
+
+        $loupe3Ctx.imageSmoothingEnabled = false;
+        $loupe3Ctx.fillStyle = '#000';
+        $loupe3Ctx.fillRect(0, 0, LOUPE_SZ, LOUPE_SZ);
+        $loupe3Ctx.drawImage($c3, srcX, srcY, srcSize, srcSize, 0, 0, LOUPE_SZ, LOUPE_SZ);
+    }
+
+    // ─── Scene 03 event wiring ─────────────────────────────────────────────────
+
+    function s3_selectPalette(name) {
+        s3_palette = name;
+        $s3shallow.classList.toggle('on', name === 'shallow');
+        $s3warm.classList.toggle('on', name === 'warm');
+        $s3cool.classList.toggle('on', name === 'cool');
+        s3_dirty = true;
+    }
+
+    $s3shallow.addEventListener('click', () => s3_selectPalette('shallow'));
+    $s3warm.addEventListener('click', () => s3_selectPalette('warm'));
+    $s3cool.addEventListener('click', () => s3_selectPalette('cool'));
+    $posterize.addEventListener('click', () => {
+        s3_posterize = !s3_posterize;
+        $posterize.classList.toggle('on', s3_posterize);
+        s3_dirty = true;
+    });
+    $loupeTog3.addEventListener('click', () => {
+        s3_loupeLive = !s3_loupeLive;
+        $loupeTog3.classList.toggle('on', s3_loupeLive);
+        if (!s3_loupeLive) $s3stage.classList.remove('loupe-live');
+    });
+
+    // Divider drag (pointer capture on the divider element itself)
+    $divider.addEventListener('pointerdown', (e) => {
+        s3_dividerDragging = true;
+        $divider.setPointerCapture(e.pointerId);
+        e.preventDefault();
+    });
+    $divider.addEventListener('pointermove', (e) => {
+        if (!s3_dividerDragging) return;
+        const box = $c3.getBoundingClientRect();
+        let t = (e.clientX - box.left) / box.width;
+        if (t < 0.02) t = 0.02;
+        if (t > 0.98) t = 0.98;
+        s3_dividerX = t;
+        s3_updateDividerPos();
+    });
+    const s3_endDividerDrag = (e) => {
+        s3_dividerDragging = false;
+        if (e && $divider.hasPointerCapture && $divider.hasPointerCapture(e.pointerId)) {
+            $divider.releasePointerCapture(e.pointerId);
+        }
+    };
+    $divider.addEventListener('pointerup', s3_endDividerDrag);
+    $divider.addEventListener('pointercancel', s3_endDividerDrag);
+    $divider.addEventListener('lostpointercapture', () => {
+        s3_dividerDragging = false;
+    });
+
+    $c3.addEventListener('pointerenter', () => {
+        s3_ptrIn = true;
+    });
+    $c3.addEventListener('pointerleave', () => {
+        s3_ptrIn = false;
+    });
+    $c3.addEventListener('pointermove', (e) => {
+        s3_ptrX = e.clientX;
+        s3_ptrY = e.clientY;
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Scene 04 — Hue Wheel (dogfoods T1: bakeGradientLUTRGBA + sampleColorLUTWrapped)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    // State
+    let s4_palette = 'rainbow';
+    let s4_lutRes = 256;
+    let s4_playing = true;
+    let s4_reverse = false;
+    let s4_phase = 0;                 // raw accumulating float; wrapped sampler handles mod
+    let s4_lastFillMs = 0;
+    let s4_frames = 0;
+
+    // Palette definitions — three cyclic colorways. Cyclic means the LAST stop
+    // meets the FIRST stop naturally, so the closed-bake produces a seamless
+    // LUT (D10, T1). Hue values chosen for full-wheel coverage.
+    const s4_palRainbow = [
+        {l: 0.65, c: 0.16, h: 0},
+        {l: 0.72, c: 0.18, h: 60},
+        {l: 0.85, c: 0.14, h: 120},
+        {l: 0.70, c: 0.16, h: 200},
+        {l: 0.55, c: 0.18, h: 260},
+        {l: 0.55, c: 0.20, h: 320},
+    ];
+    const s4_palDusk = [
+        {l: 0.30, c: 0.10, h: 260},
+        {l: 0.45, c: 0.14, h: 300},
+        {l: 0.55, c: 0.16, h: 340},
+        {l: 0.65, c: 0.14, h: 30},
+        {l: 0.55, c: 0.10, h: 80},
+        {l: 0.35, c: 0.12, h: 220},
+    ];
+    const s4_palCandy = [
+        {l: 0.85, c: 0.14, h: 0},
+        {l: 0.90, c: 0.12, h: 70},
+        {l: 0.88, c: 0.13, h: 160},
+        {l: 0.82, c: 0.14, h: 220},
+        {l: 0.86, c: 0.13, h: 290},
+        {l: 0.90, c: 0.12, h: 340},
+    ];
+
+    function s4_stops() {
+        if (s4_palette === 'rainbow') return s4_palRainbow;
+        if (s4_palette === 'dusk') return s4_palDusk;
+        return s4_palCandy;
+    }
+
+    // Precomputed angle field: Float32Array(W*H) of atan2/TAU + 0.5 → [0, 1).
+    // Built once per canvas resolution; per-frame loop never calls atan2 again.
+    // The whole reason Scene 04 exists on the phone.
+    let s4_field = null;
+    let s4_fieldW = 0;
+    let s4_fieldH = 0;
+
+    function s4_buildAngleField() {
+        const W = $c4.width, H = $c4.height;
+        if (s4_field !== null && s4_fieldW === W && s4_fieldH === H) return;
+        const field = new Float32Array(W * H);
+        const cx = W / 2, cy = H / 2;
+        const INV_TAU = 1 / TAU;
+        for (let y = 0; y < H; y++) {
+            for (let x = 0; x < W; x++) {
+                // atan2 in [-π, π], divide by TAU → [-0.5, 0.5], + 0.5 → [0, 1).
+                field[y * W + x] = Math.atan2(y - cy, x - cx) * INV_TAU + 0.5;
+            }
+        }
+        s4_field = field;
+        s4_fieldW = W;
+        s4_fieldH = H;
+    }
+
+    // Pixel buffer + ImageData alias — same trick as Scene 01/03: one Uint32Array
+    // buffer, two views (Uint32 for the write loop, Uint8Clamped for putImageData).
+    let s4_pixels = null;
+    let s4_imageData = null;
+
+    function s4_ensureImageBuf() {
+        const W = $c4.width, H = $c4.height;
+        if (s4_pixels === null || s4_pixels.length !== W * H) {
+            s4_pixels = new Uint32Array(W * H);
+            s4_imageData = new ImageData(new Uint8ClampedArray(s4_pixels.buffer), W, H);
+        }
+    }
+
+    // LUT: baked once from stops + resolution; rebaked only on stops or res change.
+    let s4_lut = null;
+    let s4_lutDirty = true;
+
+    function s4_rebakeLut() {
+        // The T1 sibling release doing real work: closed-bake for cyclic sampling.
+        s4_lut = bakeGradientLUTRGBA(s4_stops(), s4_lutRes, {closed: true});
+        s4_lutDirty = false;
+        s4_updateCssOut();
+    }
+
+    // Hue Wheel frame body — one tight loop, zero allocations, no trig.
+    // Guaranteed pure integer math + one f32→f64 read + one f64 add per pixel.
+    function s4_drawFrame(dt) {
+        if (s4_lutDirty) s4_rebakeLut();
+        s4_buildAngleField();
+        s4_ensureImageBuf();
+
+        // Advance phase from *seconds* (raw accumulating float; sampler wraps).
+        if (s4_playing) {
+            s4_phase += (s4_reverse ? -1 : 1) * dt * 0.15;   // ~55°/s
+        }
+
+        const W = $c4.width, H = $c4.height;
+        const field = s4_field;
+        const pixels = s4_pixels;
+        const lut = s4_lut;
+        const phase = s4_phase;
+
+        const t0 = performance.now();
+        for (let i = 0; i < pixels.length; i++) {
+            // D10 in action: raw accumulating phase fed straight in, sampler
+            // handles mod. No `phase % 1`, no `+ 1 & 1`, no bookkeeping.
+            pixels[i] = sampleColorLUTWrapped(lut, field[i] + phase);
+        }
+        s4_lastFillMs = performance.now() - t0;
+
+        $c4ctx.putImageData(s4_imageData, 0, 0);
+
+        // Ring gauge — small tick at the current phase angle. Redrawn each frame
+        // (~cheap; 80×80 canvas, few strokes).
+        s4_drawRing();
+    }
+
+    function s4_drawRing() {
+        const W = $ringGauge.width, H = $ringGauge.height;
+        $ringCtx.clearRect(0, 0, W, H);
+        const cx = W / 2, cy = H / 2;
+        const rOuter = Math.min(W, H) / 2 - 4;
+        const rInner = rOuter - 6;
+        // Rim
+        $ringCtx.strokeStyle = 'rgba(58,95,67,0.9)';
+        $ringCtx.lineWidth = 1;
+        $ringCtx.beginPath();
+        $ringCtx.arc(cx, cy, rOuter, 0, TAU);
+        $ringCtx.stroke();
+        // Tick at current phase — phase is in periods, so *TAU gives radians.
+        const a = s4_phase * TAU;
+        const cosA = Math.cos(a), sinA = Math.sin(a);
+        $ringCtx.strokeStyle = 'var(--fg)';
+        $ringCtx.strokeStyle = '#7dff9b';
+        $ringCtx.lineWidth = 2;
+        $ringCtx.beginPath();
+        $ringCtx.moveTo(cx + cosA * rInner, cy + sinA * rInner);
+        $ringCtx.lineTo(cx + cosA * rOuter, cy + sinA * rOuter);
+        $ringCtx.stroke();
+    }
+
+    // CSS output — one seamless conic-gradient() string with `oklch()` stops
+    // AND a closing stop at 360° that repeats the first color. lite-gradient's
+    // closed emitters (toCssLinear/toCssRadial) do this automatically for their
+    // geometries; conic isn't in that class, so we emit it here to match the
+    // pattern. `formatCssConic` in studio doesn't do the closing stop yet — a
+    // clean v1.2.2 hygiene bump if you want it; the demo doesn't depend on it.
+    function s4_updateCssOut() {
+        const stops = s4_stops();
+        const n = stops.length;
+        const parts = new Array(n + 1);
+        for (let i = 0; i < n; i++) {
+            const s = stops[i];
+            const pos = ((i / n) * 360).toFixed(2);
+            parts[i] = `oklch(${s.l.toFixed(3)} ${s.c.toFixed(3)} ${s.h.toFixed(1)}) ${pos}deg`;
+        }
+        const first = stops[0];
+        parts[n] = `oklch(${first.l.toFixed(3)} ${first.c.toFixed(3)} ${first.h.toFixed(1)}) 360.00deg`;
+        $cssOut.value = `conic-gradient(from 0deg at center in oklch, ${parts.join(', ')})`;
+    }
+
+    // ─── Scene 04 event wiring ─────────────────────────────────────────────────
+
+    $s4pal.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-pal]');
+        if (!btn) return;
+        s4_palette = btn.dataset.pal;
+        for (const b of $s4pal.children) b.classList.toggle('on', b === btn);
+        s4_lutDirty = true;
+    });
+    $s4res.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-lres]');
+        if (!btn) return;
+        s4_lutRes = +btn.dataset.lres;
+        for (const b of $s4res.children) b.classList.toggle('on', b === btn);
+        s4_lutDirty = true;
+    });
+    $s4play.addEventListener('click', () => {
+        s4_playing = !s4_playing;
+        $s4play.classList.toggle('on', s4_playing);
+        $s4play.textContent = s4_playing ? 'Playing' : 'Paused';
+    });
+    $s4reverse.addEventListener('click', () => {
+        s4_reverse = !s4_reverse;
+        $s4reverse.classList.toggle('on', s4_reverse);
+    });
+    $cssCopy.addEventListener('click', async () => {
+        try {
+            await navigator.clipboard.writeText($cssOut.value);
+            const original = $cssCopy.textContent;
+            $cssCopy.textContent = 'Copied ✓';
+            setTimeout(() => {
+                $cssCopy.textContent = original;
+            }, 900);
+        } catch {
+            $cssOut.focus();
+            $cssOut.select();
+        }
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Tab switching
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    let currentTab = 's1';
+
+    $tabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-tab]');
+        if (!btn) return;
+        const tab = btn.dataset.tab;
+        if (tab === currentTab) return;
+        currentTab = tab;
+        for (const b of $tabs.children) b.classList.toggle('on', b === btn);
+        for (const s of $sections) s.classList.toggle('on', s.dataset.scene === tab);
+        // First view of Scene 02 needs a rebake so the trace is drawn immediately.
+        if (tab === 's2') s2_dirty = true;
+        if (tab === 's3') {
+            s3_dirty = true;
+            requestAnimationFrame(() => s3_updateDividerPos());
+        }
+        if (tab === 's4') s4_lutDirty = true;
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    //   Frame loop — single RAF driver, both scenes cheap-branched
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    let lastTs = performance.now();
+
+    function frame(ts) {
+        const dt = (ts - lastTs) / 1000;
+        lastTs = ts;
+
+        if (currentTab === 's1') {
+            if (s1_dirty) s1_rebake();
+            if (s1_drift && !s1_dragging) {
+                s1_panX += AUTO_DRIFT_PX_S * dt * 0.7;
+                s1_panY += AUTO_DRIFT_PX_S * dt * 0.4;
+            }
+            s1_draw();
+
+            // Telemetry throttle (mask ≈ 7.5 Hz at 60fps)
+            s1_frames++;
+            if ((s1_frames & TELEMETRY_MASK) === 0) {
+                const now = performance.now();
+                const elapsed = (now - s1_fpsT0) / 1000;
+                s1_fpsHz = ((s1_frames - 0) / elapsed) * 0.4 + s1_fpsHz * 0.6;
+                // toFixed is fine here — we're inside the 7.5 Hz throttle, not the frame.
+                $tFps.textContent = s1_fpsHz.toFixed(0);
+                $tBake.textContent = s1_lastBakeMs.toFixed(2) + ' ms';
+                $tTiles.textContent = s1_lastBakeTiles;
+                $tRes.textContent = s1_res + ' px';
+                // Reset the FPS window every ~1 s to keep it responsive.
+                if (elapsed > 1) {
+                    s1_fpsT0 = now;
+                    s1_frames = 0;
+                    s1_fpsHz = s1_fpsHz;
+                }
+            }
+        } else if (currentTab === 's2') {
+            if (s2_dirty) s2_rebake();
+            s2_drawLoupe();
+
+            s2_frames++;
+            if ((s2_frames & TELEMETRY_MASK) === 0) {
+                const ratio = s2_interMax > 0 ? (s2_seamMax / s2_interMax) : Infinity;
+                // A ratio of 141 means nothing to most people. "The seam jumps 141x harder
+                // than any interior step" means something. Say the thing.
+                if (ratio <= 1.5) {
+                    $sVerdict.className = 'verdict pass';
+                    $sVerdict.textContent =
+                        'SEAMLESS — the worst seam step is no larger than the worst step anywhere ' +
+                        'inside the tile. The boundary is not a special place.';
+                } else {
+                    $sVerdict.className = 'verdict fail';
+                    $sVerdict.textContent =
+                        'BROKEN — the seam jumps ' +
+                        (!isFinite(ratio) ? '∞' : ratio < 10 ? ratio.toFixed(1) : String(Math.round(ratio))) +
+                        'x harder than any interior step. That edge is a visible line when tiled.';
+                }
+                $sSeam.textContent = s2_seamMax.toFixed(4);
+                $sInter.textContent = s2_interMax.toFixed(4);
+                $sRatio.textContent = ratio > 1e6 ? '—' : ratio.toFixed(2);
+                // Ratio color: near 1 is fg (green), > 2 flags seam, > 10 is red.
+                $sRatio.classList.remove('warn', 'seam', 'ok');
+                $sRatio.classList.add(
+                    ratio > 10 ? 'seam' :
+                        ratio > 2 ? 'warn' : 'ok'
+                );
+            }
+        } else if (currentTab === 's3') {
+            if (s3_dirty) s3_rebake();
+            s3_draw();
+            s3_drawLoupe();
+            s3_benchStep();          // no-op once the median is in
+
+            s3_frames++;
+            if ((s3_frames & TELEMETRY_MASK) === 0) {
+                $tOff.textContent = s3_lastMsOff.toFixed(2) + ' ms';
+                $tOn.textContent = s3_lastMsOn.toFixed(2) + ' ms';
+                // Say "measuring" rather than print a number we do not have yet. A cold
+                // single-shot ratio is not a measurement, it is a coin flip with a % sign.
+                $tOver.textContent = s3_overhead === null
+                    ? 'measuring…'
+                    : '+' + s3_overhead.toFixed(1) + ' %';
+            }
+        } else if (currentTab === 's4') {
+            s4_drawFrame(dt);
+
+            s4_frames++;
+            if ((s4_frames & TELEMETRY_MASK) === 0) {
+                $tFill.textContent = s4_lastFillMs.toFixed(2) + ' ms';
+                $tLres.textContent = s4_lutRes;
+                // Phase in [0, 1) for display (raw accumulator internally).
+                const shown = ((s4_phase % 1) + 1) % 1;
+                $tPhase.textContent = shown.toFixed(3);
+            }
+        }
+        requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
+
+    // Boot: seed default state, first rebake will happen on first frame.
+    // (Nothing else — the RAF loop is the whole runtime.)
+</script>
+
+</body>
+</html>
